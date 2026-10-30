@@ -3,22 +3,33 @@
         <div class="input-group" :class="size ? `input-group-${size}` : ''">
             <span class="input-group-text"><i :class="['bi', icon]"></i></span>
             <input ref="input" v-model="q" type="text" class="form-control" :placeholder="placeholder" autocomplete="off"
+                   role="combobox" :aria-expanded="open" :aria-controls="listId" aria-autocomplete="list"
+                   :aria-activedescendant="open && items.length ? `${listId}-${active}` : undefined"
                    @input="search" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)"
-                   @keydown.enter.prevent="choose(active)" @keydown.esc="open = false" @focus="open = items.length > 0" @blur="close">
-            <button v-if="q" class="btn btn-outline-secondary" type="button" @mousedown.prevent="clear"><i class="bi bi-x"></i></button>
+                   @keydown.enter.prevent="choose(active)" @keydown.esc="open = false"
+                   @focus="open = items.length > 0" @blur="close">
+            <span v-if="loading" class="input-group-text bg-transparent">
+                <span class="spinner-border spinner-border-sm text-success" role="status" aria-label="Searching"></span>
+            </span>
+            <button v-else-if="q" class="btn btn-outline-secondary" type="button" aria-label="Clear" @mousedown.prevent="clear"><i class="bi bi-x-lg"></i></button>
         </div>
-        <div v-if="open" class="ac-box">
-            <div v-for="(item, i) in items" :key="item.id" class="ac-item" :class="{ active: i === active }" @mousedown.prevent="choose(i)" @mouseenter="active = i">
+
+        <div v-if="open" :id="listId" ref="box" class="ac-box" role="listbox">
+            <div v-for="(item, i) in items" :id="`${listId}-${i}`" :key="item.id" class="ac-item" :class="{ active: i === active }"
+                 role="option" :aria-selected="i === active" @mousedown.prevent="choose(i)" @mouseenter="active = i">
                 <slot name="item" :item="item">{{ item.name }}</slot>
             </div>
-            <div v-if="!items.length && !loading" class="p-2 text-muted small">{{ emptyText }}</div>
-            <div v-if="loading" class="p-2 text-muted small"><span class="spinner-border spinner-border-sm"></span> Searching…</div>
+
+            <div v-if="!items.length && !loading" class="ac-state"><i class="bi bi-search me-2"></i>{{ emptyText }}</div>
+            <div v-if="!items.length && loading" class="ac-state">Searching…</div>
+
+            <div v-if="items.length" class="ac-foot">Use ↑ ↓ to move, Enter to select</div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import api, { isCancel } from '../api';
 import { debounce } from '../utils/format';
 
@@ -36,12 +47,14 @@ const props = defineProps({
 });
 const emit = defineEmits(['select']);
 
+const listId = `ac-${Math.random().toString(36).slice(2, 8)}`;
 const q = ref('');
 const items = ref([]);
 const active = ref(0);
 const open = ref(false);
 const loading = ref(false);
 const input = ref(null);
+const box = ref(null);
 let controller = null;
 
 const search = debounce(async () => {
@@ -63,7 +76,13 @@ const search = debounce(async () => {
     }
 }, 250);
 
-function move(d) { active.value = Math.max(0, Math.min(items.value.length - 1, active.value + d)); }
+function move(d) {
+    if (!open.value && items.value.length) { open.value = true; return; }
+    active.value = Math.max(0, Math.min(items.value.length - 1, active.value + d));
+    // keep the highlighted row visible when the list scrolls
+    nextTick(() => box.value?.querySelector(`#${listId}-${active.value}`)?.scrollIntoView({ block: 'nearest' }));
+}
+
 function choose(i) {
     const item = items.value[i];
     if (!item) return;
@@ -71,6 +90,7 @@ function choose(i) {
     open.value = false;
     if (props.clearOnSelect) { q.value = ''; items.value = []; }
 }
+
 function clear() { q.value = ''; items.value = []; open.value = false; input.value?.focus(); }
 function close() { setTimeout(() => { open.value = false; }, 150); }
 

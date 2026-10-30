@@ -1,25 +1,33 @@
 <template>
     <div>
         <slot name="top" />
+
         <div class="card">
             <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
                 <div class="d-flex flex-wrap gap-2 align-items-center flex-grow-1">
                     <div class="input-group" style="max-width: 340px">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input v-model="filters.search" type="search" class="form-control" :placeholder="searchPlaceholder">
+                        <input v-model="filters.search" type="search" class="form-control" :placeholder="searchPlaceholder" :aria-label="searchPlaceholder">
                     </div>
                     <slot name="filters" :filters="filters" />
                 </div>
-                <button class="btn btn-success" @click="openForm()"><i class="bi bi-plus-lg"></i> {{ addLabel }}</button>
+
+                <div class="d-flex align-items-center gap-3">
+                    <span v-if="total !== null" class="result-count d-none d-sm-inline">{{ total }} {{ total === 1 ? 'record' : 'records' }}</span>
+                    <button class="btn btn-success d-inline-flex align-items-center" @click="openForm()">
+                        <i class="bi bi-plus-lg me-2"></i>{{ addLabel }}
+                    </button>
+                </div>
             </div>
 
-            <DataTable ref="table" :url="endpoint" :filters="filters" :cols="columns.length + 1">
+            <DataTable ref="table" :url="endpoint" :filters="filters" :cols="columns.length + 1" @loaded="onLoaded">
                 <template #head>
                     <tr>
                         <th v-for="c in columns" :key="c.key">{{ c.label }}</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </template>
+
                 <template #row="{ item }">
                     <tr>
                         <td v-for="c in columns" :key="c.key" :class="c.class">
@@ -27,8 +35,12 @@
                         </td>
                         <td class="text-end text-nowrap">
                             <slot name="actions" :item="item" :reload="reload" />
-                            <button class="btn btn-sm btn-outline-primary ms-1" title="Edit" @click="openForm(item)"><i class="bi bi-pencil"></i></button>
-                            <button v-if="canDelete" class="btn btn-sm btn-outline-danger ms-1" title="Delete" @click="remove(item)"><i class="bi bi-trash"></i></button>
+                            <button class="btn btn-icon btn-soft-primary ms-1" title="Edit" aria-label="Edit" @click="openForm(item)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button v-if="canDelete" class="btn btn-icon btn-soft-danger ms-1" title="Delete" aria-label="Delete" @click="remove(item)">
+                                <i class="bi bi-trash"></i>
+                            </button>
                         </td>
                     </tr>
                 </template>
@@ -36,32 +48,41 @@
         </div>
 
         <Modal :show="show" :title="(editing ? 'Edit ' : 'Add ') + singular" :size="modalSize" @close="show = false">
-            <form class="row g-3" @submit.prevent="save">
+            <form :id="formId" class="row g-3" autocomplete="off" @submit.prevent="save">
                 <div v-for="f in fields" :key="f.key" :class="f.col || 'col-12'">
                     <template v-if="f.type === 'switch'">
                         <div class="form-check form-switch mt-2">
-                            <input :id="'f_' + f.key" v-model="form[f.key]" class="form-check-input" type="checkbox">
+                            <input :id="'f_' + f.key" v-model="form[f.key]" class="form-check-input" type="checkbox" role="switch">
                             <label class="form-check-label" :for="'f_' + f.key">{{ f.label }}</label>
                         </div>
                     </template>
+
                     <template v-else>
-                        <label class="form-label">{{ f.label }} <span v-if="f.required" class="text-danger">*</span></label>
-                        <textarea v-if="f.type === 'textarea'" v-model="form[f.key]" class="form-control" rows="3"></textarea>
-                        <select v-else-if="f.type === 'select'" v-model="form[f.key]" class="form-select" :required="f.required">
+                        <label class="form-label" :for="'f_' + f.key">{{ f.label }} <span v-if="f.required" class="text-danger">*</span></label>
+
+                        <textarea v-if="f.type === 'textarea'" :id="'f_' + f.key" v-model="form[f.key]" class="form-control" rows="3" :placeholder="f.placeholder"></textarea>
+
+                        <select v-else-if="f.type === 'select'" :id="'f_' + f.key" v-model="form[f.key]" class="form-select" :required="f.required">
                             <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
                         </select>
-                        <input v-else v-model="form[f.key]" :type="f.type || 'text'" class="form-control" :required="f.required && !(f.type === 'password' && editing)"
-                               :step="f.step" :min="f.min" :placeholder="f.type === 'password' && editing ? 'Leave blank to keep' : f.placeholder">
+
+                        <input v-else :id="'f_' + f.key" v-model="form[f.key]" :type="f.type || 'text'" class="form-control"
+                               :required="f.required && !(f.type === 'password' && editing)"
+                               :step="f.step" :min="f.min"
+                               :placeholder="f.type === 'password' && editing ? 'Leave blank to keep current password' : f.placeholder">
+
                         <div v-if="f.hint" class="form-text">{{ f.hint }}</div>
                     </template>
                 </div>
-                <div class="col-12 d-flex justify-content-end gap-2">
-                    <button type="button" class="btn btn-light" @click="show = false">Cancel</button>
-                    <button type="submit" class="btn btn-success" :disabled="saving">
-                        <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save
-                    </button>
-                </div>
             </form>
+
+            <template #footer>
+                <button type="button" class="btn btn-outline-secondary" @click="show = false">Cancel</button>
+                <button type="submit" class="btn btn-success d-inline-flex align-items-center" :form="formId" :disabled="saving">
+                    <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
+                    {{ saving ? 'Saving…' : editing ? 'Save changes' : 'Save' }}
+                </button>
+            </template>
         </Modal>
     </div>
 </template>
@@ -89,12 +110,16 @@ const props = defineProps({
 });
 const emit = defineEmits(['saved']);
 
+const formId = `crud-form-${Math.random().toString(36).slice(2, 8)}`;
 const table = ref(null);
 const filters = reactive({ search: '', ...props.initialFilters });
 const show = ref(false);
 const editing = ref(null);
 const saving = ref(false);
+const total = ref(null);
 const form = reactive({});
+
+const onLoaded = (d) => { total.value = d.meta?.total ?? d.total ?? null; };
 
 function openForm(item = null) {
     editing.value = item;

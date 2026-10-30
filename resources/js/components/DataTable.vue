@@ -1,25 +1,53 @@
 <template>
-    <div class="table-responsive">
-        <table class="table table-hover mb-0" :class="tableClass">
-            <thead class="table-light"><slot name="head" :sort="sort" :sortBy="sortBy" :icon="sortIcon" /></thead>
-            <tbody :style="loading && rows.length ? 'opacity:.5' : ''">
-                <template v-if="loading && !rows.length">
-                    <tr v-for="i in 5" :key="'s' + i"><td :colspan="cols"><div class="skeleton"></div></td></tr>
-                </template>
-                <tr v-else-if="failed">
-                    <td :colspan="cols" class="text-center text-danger py-4">Failed to load. <a href="#" @click.prevent="load()">Retry</a></td>
-                </tr>
-                <tr v-else-if="!rows.length">
-                    <td :colspan="cols" class="text-center text-muted py-5"><i class="bi bi-inbox fs-2 d-block mb-2"></i>{{ emptyText }}</td>
-                </tr>
-                <template v-else>
-                    <template v-for="(item, index) in rows" :key="item.id ?? index">
-                        <slot name="row" :item="item" :index="index" />
+    <div class="dt-wrap">
+        <div v-if="loading" class="dt-progress" role="progressbar" aria-label="Loading"></div>
+
+        <div class="table-responsive">
+            <table class="table table-hover data-table mb-0" :class="tableClass">
+                <thead class="dt-head"><slot name="head" :sort="sort" :sortBy="sortBy" :icon="sortIcon" /></thead>
+                <tbody :class="{ 'is-reloading': loading && rows.length }">
+                    <!-- First load: skeleton rows -->
+                    <template v-if="loading && !rows.length">
+                        <tr v-for="i in 6" :key="'s' + i">
+                            <td v-for="c in cols" :key="c"><div class="skeleton" :style="{ width: skeletonWidth(i, c) }"></div></td>
+                        </tr>
                     </template>
-                </template>
-            </tbody>
-        </table>
+
+                    <!-- Error -->
+                    <tr v-else-if="failed">
+                        <td :colspan="cols" class="p-0">
+                            <div class="state-box">
+                                <div class="state-icon error"><i class="bi bi-wifi-off"></i></div>
+                                <div class="fw-semibold text-body mb-1">Couldn't load the data</div>
+                                <div class="small mb-3">Check your connection and try again.</div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @click="load()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Try again
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Empty -->
+                    <tr v-else-if="!rows.length">
+                        <td :colspan="cols" class="p-0">
+                            <div class="state-box">
+                                <div class="state-icon"><i class="bi bi-inbox"></i></div>
+                                <div class="fw-semibold text-body">{{ emptyText }}</div>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Rows -->
+                    <template v-else>
+                        <template v-for="(item, index) in rows" :key="item.id ?? index">
+                            <slot name="row" :item="item" :index="index" />
+                        </template>
+                    </template>
+                </tbody>
+            </table>
+        </div>
     </div>
+
     <div v-if="meta && showPager" class="card-footer">
         <Pagination :meta="meta" @change="load" />
     </div>
@@ -57,6 +85,9 @@ let controller = null;
 let timer = null;
 
 const clean = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined && v !== false));
+
+// deterministic "random" widths so skeleton rows look natural but never jump
+const skeletonWidth = (row, col) => `${45 + ((row * 7 + col * 13) % 45)}%`;
 
 function normalize(d) {
     const m = d.meta || d;
