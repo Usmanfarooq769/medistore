@@ -75,6 +75,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
 
     Route::get('medicines/{medicine}/movements', [MedicineController::class, 'movements']);
+    Route::post('medicines/import-csv', [MedicineController::class, 'importCsv']);
     Route::apiResource('medicines', MedicineController::class);
 
     Route::apiResource('purchases', PurchaseController::class)->except('update');

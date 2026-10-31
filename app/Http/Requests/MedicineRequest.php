@@ -24,6 +24,7 @@ class MedicineRequest extends FormRequest
             'manufacturer_id' => 'nullable|exists:manufacturers,id',
             'barcode'         => ['nullable', 'string', 'max:100', Rule::unique('medicines', 'barcode')->ignore($id)],
             'unit'            => 'required|string|max:30',
+            'pack_size'       => 'required|integer|min:1|max:100000',
             'purchase_price'  => 'required|numeric|min:0',
             'sale_price'      => 'required|numeric|min:0|gte:purchase_price',
             'reorder_level'   => 'required|integer|min:0',

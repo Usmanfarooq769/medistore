@@ -131,12 +131,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import api, { isCancel } from '../api';
+import { useRoute } from 'vue-router';
 import Autocomplete from '../components/Autocomplete.vue';
 import { useAuth } from '../stores/auth';
 import { date, debounce, getCurrency, money, stockChanged } from '../utils/format';
 import { confirm, esc, Swal, toast } from '../utils/swal';
 
 const auth = useAuth();
+const route = useRoute();
 const priceEdit = computed(() => auth.isAdmin || auth.can('cashier_price_edit'));
 const methods = [
     { key: 'cash', label: 'Cash', icon: 'bi-cash' }, { key: 'card', label: 'Card', icon: 'bi-credit-card' },
@@ -310,6 +312,10 @@ onMounted(async () => {
     searchEl.value?.focus();
     loadProducts();
     categories.value = (await api.get('/lookups')).data.categories;
+    if (route.query.customer) {
+        try { customer.value = (await api.get(`/customers/${route.query.customer}`)).data.data; }
+        catch (e) { /* invalid customer id */ }
+    }
 });
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); controller?.abort(); });
 </script>

@@ -13,6 +13,7 @@
             <template #cell-balance="{ item }"><span class="fw-semibold" :class="item.balance > 0 ? 'text-danger' : 'text-success'">{{ money(item.balance) }}</span></template>
             <template #actions="{ item }">
                 <button v-if="item.balance > 0" class="btn btn-sm btn-outline-warning" title="Receive payment" @click="pay = item"><i class="bi bi-cash-coin"></i></button>
+                <router-link :to="`/pos?customer=${item.id}`" class="btn btn-sm btn-outline-success ms-1" title="New sale for this customer"><i class="bi bi-cart-plus"></i></router-link>
                 <router-link :to="`/customers/${item.id}`" class="btn btn-sm btn-outline-secondary ms-1"><i class="bi bi-eye"></i></router-link>
             </template>
         </CrudPage>

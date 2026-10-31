@@ -27,7 +27,16 @@ class SettingController extends Controller
             'return_days'          => 'required|integer|min:0|max:365',
             'cashier_price_edit'   => 'required|in:0,1',
             'receipt_footer'       => 'nullable|string|max:255',
+            'daily_report_email'   => 'nullable|string|max:1000',
         ]);
+
+        if (! empty($data['daily_report_email'])) {
+            foreach (preg_split('/[,;]+/', $data['daily_report_email']) as $email) {
+                if (! filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
+                    return response()->json(['message' => 'Enter valid email address(es), separated by commas.'], 422);
+                }
+            }
+        }
 
         Setting::put($data);
 
