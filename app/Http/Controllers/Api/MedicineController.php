@@ -54,6 +54,26 @@ class MedicineController extends Controller
     }
 
 
+    /** Download a clean CSV template with the exact supported import columns. */
+    public function downloadImportTemplate()
+    {
+        $headers = [
+            'name', 'generic_name', 'strength', 'category', 'manufacturer', 'barcode',
+            'unit', 'pack_size', 'purchase_price', 'sale_price', 'reorder_level', 'rack',
+        ];
+
+        return response()->streamDownload(function () use ($headers) {
+            $output = fopen('php://output', 'w');
+            // UTF-8 BOM helps Microsoft Excel detect UTF-8 CSV files correctly.
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, $headers);
+            fclose($output);
+        }, 'medistore_medicine_import_template.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+        ]);
+    }
+
     /** Import medicine master data from a CSV exported by another pharmacy system. */
     public function importCsv(Request $request)
     {

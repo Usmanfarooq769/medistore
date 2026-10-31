@@ -14,7 +14,35 @@
                     <div class="col-md-2"><select v-model="filters.status" class="form-select">
                         <option value="">All status</option><option value="low">Low stock</option><option value="out">Out of stock</option>
                         <option value="expiring">Has expiring batch</option><option value="expired">Has expired batch</option><option value="inactive">Inactive</option></select></div>
-                    <div class="col-md-3 text-md-end d-flex justify-content-md-end gap-2"><button class="btn btn-outline-primary" @click="$refs.csvInput.click()"><i class="bi bi-file-earmark-spreadsheet"></i> Import CSV</button><input ref="csvInput" type="file" accept=".csv,text/csv" class="d-none" @change="importCsv"><button class="btn btn-success" @click="openForm()"><i class="bi bi-plus-lg"></i> Add Medicine</button></div>
+                    <div class="col-md-3 text-md-end d-flex flex-wrap justify-content-md-end gap-2">
+                        <button class="btn btn-outline-secondary" :disabled="downloadingTemplate" @click="downloadCsvTemplate">
+                            <span v-if="downloadingTemplate" class="spinner-border spinner-border-sm me-1"></span>
+                            <i v-else class="bi bi-download"></i> CSV Template
+                        </button>
+                        <button class="btn btn-outline-primary" @click="$refs.csvInput.click()"><i class="bi bi-upload"></i> Import CSV</button>
+                        <input ref="csvInput" type="file" accept=".csv,text/csv" class="d-none" @change="importCsv">
+                        <button class="btn btn-success" @click="openForm()"><i class="bi bi-plus-lg"></i> Add Medicine</button>
+                    </div>
+                </div>
+                <div class="border-top mt-3 pt-3">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div class="small text-muted"><i class="bi bi-info-circle me-1"></i> Download the template, fill one medicine per row in Excel, then upload the saved CSV file.</div>
+                        <button class="btn btn-sm btn-link text-decoration-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#medicineCsvGuide" aria-expanded="false" aria-controls="medicineCsvGuide">View CSV column guide <i class="bi bi-chevron-down"></i></button>
+                    </div>
+                    <div class="collapse mt-3" id="medicineCsvGuide">
+                        <div class="bg-light rounded p-3 small">
+                            <div class="fw-semibold mb-2">Supported CSV columns</div>
+                            <div class="row g-2">
+                                <div class="col-md-6"><b>Required:</b> <code>name</code> (medicine/brand name). Other fields can be left blank.</div>
+                                <div class="col-md-6"><b>Prices:</b> <code>purchase_price</code>, <code>sale_price</code>. Sale price must not be lower than purchase price.</div>
+                                <div class="col-md-6"><b>Medicine details:</b> <code>generic_name</code>, <code>strength</code>, <code>category</code>, <code>manufacturer</code>, <code>barcode</code>.</div>
+                                <div class="col-md-6"><b>Inventory settings:</b> <code>unit</code>, <code>pack_size</code>, <code>reorder_level</code>, <code>rack</code>.</div>
+                            </div>
+                            <hr class="my-2">
+                            <div><b>Important:</b> <code>pack_size</code> means units in one pack (e.g. 10 tablets per strip). CSV import does not add stock. Add opening stock through <router-link to="/purchases/create">New Purchase</router-link> with batch number, expiry date and supplier.</div>
+                            <div class="text-muted mt-1">Existing medicines are matched by barcode; if barcode is blank, matching uses medicine name + strength. Blank fields do not erase existing values.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <DataTable ref="table" url="/medicines" :filters="filters" :cols="7" default-sort="name">
@@ -102,6 +130,7 @@ const units = ['strip', 'tablet', 'capsule', 'box', 'bottle', 'tube', 'vial', 'a
 
 const show = ref(false);
 const saving = ref(false);
+const downloadingTemplate = ref(false);
 const editId = ref(null);
 const blank = { name: '', strength: '', generic_name: '', category_id: null, manufacturer_id: null, unit: 'strip', pack_size: 1, barcode: '', purchase_price: '', sale_price: '', reorder_level: 10, rack: '', is_active: true };
 const form = reactive({ ...blank });
@@ -125,6 +154,21 @@ async function save() {
             if (r.isConfirmed) router.push(`/purchases/create?medicine=${data.data.id}`);
         } else notify(data.message);
     } catch (e) { /* shown */ } finally { saving.value = false; }
+}
+
+async function downloadCsvTemplate() {
+    downloadingTemplate.value = true;
+    try {
+        const response = await api.get('/medicines/import-template', { responseType: 'blob' });
+        const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8;' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'medistore_medicine_import_template.csv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (e) { /* shown */ } finally { downloadingTemplate.value = false; }
 }
 
 async function importCsv(event) {
