@@ -14,8 +14,10 @@
                     <div class="small text-muted">{{ c.l }}</div><div class="fw-bold fs-5">{{ c.v }}</div></div></div></div>
             </div>
             <div class="row g-3 mb-3">
-                <div class="col-md-5"><div class="card h-100">
+                <div class="col-md-5">
+                    <div class="card h-100">
                     <div class="card-header fw-semibold">Cash summary</div>
+                    <div class="card-body">                   
                     <table class="table table-sm mb-0">
                         <tr v-for="(m, k) in r.by_method" :key="k"><td class="text-capitalize">{{ k }} sales ({{ m.count }})</td><td class="text-end">{{ money(m.total) }}</td></tr>
                         <tr><td>+ Dues received (cash)</td><td class="text-end">{{ money(r.summary.customer_received) }}</td></tr>
@@ -25,7 +27,9 @@
                         <tr class="table-success fw-bold"><td>Cash in hand</td><td class="text-end">{{ money(r.summary.cash_in_hand) }}</td></tr>
                         <tr><td class="text-muted">Purchases today</td><td class="text-end text-muted">{{ money(r.summary.purchases) }}</td></tr>
                     </table>
-                </div></div>
+                    </div>
+                    </div>
+            </div>
                 <div class="col-md-7"><div class="card h-100">
                     <div class="card-header fw-semibold">Medicines sold (net of returns)</div>
                     <div class="table-responsive" style="max-height:320px"><table class="table table-sm mb-0">
@@ -51,10 +55,12 @@
                 </div></div>
                 <div class="col-md-4"><div class="card">
                     <div class="card-header fw-semibold">Customer returns</div>
-                    <ul class="list-group list-group-flush">
-                        <li v-for="x in r.returns" :key="x.id" class="list-group-item d-flex justify-content-between"><a :href="`/print/return/${x.id}`" target="_blank">{{ x.return_no }}</a><span>{{ money(x.total) }} <small class="text-muted text-capitalize">{{ x.refund_method }}</small></span></li>
-                        <li v-if="!r.returns.length" class="list-group-item text-muted">No returns</li>
-                    </ul>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li v-for="x in r.returns" :key="x.id" class="list-group-item d-flex justify-content-between"><a :href="`/print/return/${x.id}`" target="_blank">{{ x.return_no }}</a><span>{{ money(x.total) }} <small class="text-muted text-capitalize">{{ x.refund_method }}</small></span></li>
+                            <li v-if="!r.returns.length" class="list-group-item text-muted">No returns</li>
+                        </ul>
+                    </div>
                 </div></div>
             </div>
         </template>
