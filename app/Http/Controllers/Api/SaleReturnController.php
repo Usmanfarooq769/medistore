@@ -11,6 +11,7 @@ use App\Models\Medicine;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
+use App\Models\LoyaltyTransaction;
 use App\Services\StockService;
 use App\Services\BranchContext;
 use App\Services\JournalPostingService;
@@ -127,6 +128,32 @@ class SaleReturnController extends Controller
 
         $total = $this->finalize($return, $subtotal, $data);
         $sale->increment('returned_amount', $total);
+        $sale->refresh();
+
+        // Reverse earned points and restore redeemed points proportionally as invoice value is returned.
+        if ($sale->customer_id && (float) $sale->total > 0) {
+            $ratio = min(1, (float) $sale->returned_amount / (float) $sale->total);
+            $earnRate = max(0, (int) setting('loyalty_earn_per_100', 1));
+            $eligiblePaid = min((float) $sale->paid, max(0, (float) $sale->total - (float) $sale->returned_amount));
+            $earnedTarget = $earnRate > 0 ? (int) floor($eligiblePaid / 100) * $earnRate : 0;
+            $netEarned = max(0, (int) $sale->loyalty_points_earned - (int) $sale->loyalty_points_reversed);
+            $reverseNow = max(0, $netEarned - $earnedTarget);
+            $restoreTarget = (int) floor((int) $sale->loyalty_points_redeemed * $ratio);
+            $restoreNow = max(0, $restoreTarget - (int) $sale->loyalty_points_restored);
+            if ($reverseNow || $restoreNow) {
+                $customer = Customer::lockForUpdate()->find($sale->customer_id);
+                if ($reverseNow) {
+                    $customer->decrement('loyalty_points', $reverseNow);
+                    $sale->increment('loyalty_points_reversed', $reverseNow);
+                    LoyaltyTransaction::create(['customer_id'=>$customer->id,'sale_id'=>$sale->id,'user_id'=>auth()->id(),'type'=>'reversed','points'=>$reverseNow,'balance_after'=>(int)$customer->fresh()->loyalty_points,'note'=>'Points reversed for return '.$return->return_no]);
+                }
+                if ($restoreNow) {
+                    $customer->increment('loyalty_points', $restoreNow);
+                    $sale->increment('loyalty_points_restored', $restoreNow);
+                    LoyaltyTransaction::create(['customer_id'=>$customer->id,'sale_id'=>$sale->id,'user_id'=>auth()->id(),'type'=>'restored','points'=>$restoreNow,'balance_after'=>(int)$customer->fresh()->loyalty_points,'note'=>'Redeemed points restored for return '.$return->return_no]);
+                }
+            }
+        }
 
         // credit invoice => reduce customer's due first
         if ($sale->due > 0 && $sale->customer_id) {

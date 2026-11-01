@@ -16,6 +16,9 @@ const routes = [
     { path: '/prescriptions', component: () => import('../pages/Prescriptions.vue'), meta: { title: 'Prescriptions' } },
     { path: '/branches', component: () => import('../pages/Branches.vue'), meta: { ...admin, title: 'Branches & Transfers' } },
     { path: '/finance', component: () => import('../pages/Finance.vue'), meta: { ...admin, title: 'Finance & Accounting' } },
+    { path: '/promotions', component: () => import('../pages/Promotions.vue'), meta: { ...admin, title: 'Promotions & Coupons' } },
+    { path: '/reports/reorder-suggestions', component: () => import('../pages/ReorderSuggestions.vue'), meta: { ...admin, title: 'Smart Reorder Suggestions' } },
+    { path: '/reports/customer-aging', component: () => import('../pages/CustomerAging.vue'), meta: { ...admin, title: 'Customer Receivables Ageing' } },
     { path: '/cashier/closing', component: () => import('../pages/CashierClosing.vue'), meta: { title: 'Cashier Shift & Closing' } },
     { path: '/reports/batch-profitability', component: () => import('../pages/reports/BatchProfitability.vue'), meta: { admin: true, title: 'Batch Profitability' } },
 

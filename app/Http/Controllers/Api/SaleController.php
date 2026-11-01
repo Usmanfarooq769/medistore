@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SaleResource;
 use App\Models\Customer;
+use App\Models\LoyaltyTransaction;
+use App\Models\Promotion;
 use App\Models\Sale;
 use App\Services\StockService;
 use App\Services\BranchContext;
@@ -69,6 +71,12 @@ class SaleController extends Controller
             if ($sale->due > 0 && $sale->customer_id) {
                 Customer::whereKey($sale->customer_id)->decrement('balance', (float) $sale->due);
             }
+            if ($sale->customer_id && (int) $sale->loyalty_points_redeemed > 0) {
+                $customer = Customer::lockForUpdate()->find($sale->customer_id);
+                $customer->increment('loyalty_points', (int) $sale->loyalty_points_redeemed);
+                LoyaltyTransaction::create(['customer_id'=>$customer->id,'sale_id'=>$sale->id,'user_id'=>auth()->id(),'type'=>'restored','points'=>(int)$sale->loyalty_points_redeemed,'balance_after'=>(int)$customer->fresh()->loyalty_points,'note'=>'Points restored after voiding invoice '.$sale->invoice_no]);
+            }
+            if ($sale->promotion_id) Promotion::whereKey($sale->promotion_id)->where('used_count','>',0)->decrement('used_count');
             $sale->delete();
         });
 

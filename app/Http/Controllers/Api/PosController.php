@@ -11,6 +11,9 @@ use App\Models\Medicine;
 use App\Models\Sale;
 use App\Models\Prescription;
 use App\Models\TaxProfile;
+use App\Models\Promotion;
+use App\Models\PromotionRedemption;
+use App\Models\LoyaltyTransaction;
 use App\Services\BranchContext;
 use App\Services\JournalPostingService;
 use App\Services\StockService;
@@ -116,11 +119,49 @@ class PosController extends Controller
                 }
             }
 
-            $discount = min((float) ($data['discount'] ?? 0), $subtotal);
-            $maxDisc = (float) setting('max_discount_percent', 100);
-            if (! $user->isAdmin() && $subtotal > 0 && ($discount / $subtotal * 100) > $maxDisc + 0.001) {
-                throw ValidationException::withMessages(['discount' => "Maximum allowed discount is {$maxDisc}%."]);
+            $customer = null;
+            if (! empty($data['customer_id'])) {
+                $customer = Customer::lockForUpdate()->find($data['customer_id']);
+            } elseif (! empty($data['customer_phone'])) {
+                $customer = Customer::firstOrCreate(['phone' => $data['customer_phone']], ['name' => $data['customer_name'] ?: 'Customer']);
+                $customer = Customer::lockForUpdate()->find($customer->id);
             }
+
+            $manualDiscount = min((float) ($data['discount'] ?? 0), $subtotal);
+            $maxDisc = (float) setting('max_discount_percent', 100);
+            if (! $user->isAdmin() && $subtotal > 0 && ($manualDiscount / $subtotal * 100) > $maxDisc + 0.001) {
+                throw ValidationException::withMessages(['discount' => "Maximum allowed manual discount is {$maxDisc}%."]);
+            }
+
+            $promotion = null;
+            $promotionDiscount = 0.0;
+            if (! empty($data['promotion_code'])) {
+                $promotion = Promotion::where('code', strtoupper(trim($data['promotion_code'])))->lockForUpdate()->first();
+                if (! $promotion || ! $promotion->is_active || ($promotion->starts_at && $promotion->starts_at->isFuture()) || ($promotion->ends_at && $promotion->ends_at->isPast())) {
+                    throw ValidationException::withMessages(['promotion_code' => 'This promotion code is invalid or inactive.']);
+                }
+                if ($subtotal < (float) $promotion->minimum_subtotal) throw ValidationException::withMessages(['promotion_code' => 'Minimum purchase for this promotion is ' . money($promotion->minimum_subtotal) . '.']);
+                if ($promotion->usage_limit !== null && $promotion->used_count >= $promotion->usage_limit) throw ValidationException::withMessages(['promotion_code' => 'This promotion has reached its usage limit.']);
+                if ($promotion->per_customer_limit && ! $customer) throw ValidationException::withMessages(['promotion_code' => 'Select a customer to use this coupon.']);
+                if ($promotion->per_customer_limit && $customer) {
+                    $used = PromotionRedemption::where('promotion_id', $promotion->id)->where('customer_id', $customer->id)->count();
+                    if ($used >= $promotion->per_customer_limit) throw ValidationException::withMessages(['promotion_code' => 'This customer has already used this promotion the maximum number of times.']);
+                }
+                $promotionDiscount = $promotion->discount_type === 'percentage'
+                    ? $subtotal * ((float) $promotion->discount_value / 100)
+                    : (float) $promotion->discount_value;
+                if ($promotion->maximum_discount !== null) $promotionDiscount = min($promotionDiscount, (float) $promotion->maximum_discount);
+                $promotionDiscount = min($promotionDiscount, max(0, $subtotal - $manualDiscount));
+            }
+
+            $redeemPoints = (int) ($data['redeem_points'] ?? 0);
+            $pointValue = max(0.01, (float) setting('loyalty_point_value', 1));
+            if ($redeemPoints > 0 && ! $customer) throw ValidationException::withMessages(['redeem_points' => 'Select a customer to redeem loyalty points.']);
+            if ($customer && $redeemPoints > 0 && $redeemPoints > (int) $customer->loyalty_points) throw ValidationException::withMessages(['redeem_points' => 'Customer does not have enough loyalty points.']);
+            $availableForPoints = max(0, $subtotal - $manualDiscount - $promotionDiscount);
+            if (($redeemPoints * $pointValue) > $availableForPoints + 0.001) throw ValidationException::withMessages(['redeem_points' => 'Loyalty redemption cannot exceed the remaining item subtotal.']);
+            $loyaltyDiscount = $redeemPoints * $pointValue;
+            $discount = min($subtotal, $manualDiscount + $promotionDiscount + $loyaltyDiscount);
 
             $taxPercent = $taxProfile ? (float) $taxProfile->rate : (float) ($data['tax_percent'] ?? 0);
             $taxable = $subtotal - $discount;
@@ -134,14 +175,9 @@ class PosController extends Controller
             $paid  = (float) $data['paid'];
             $due   = max($total - $paid, 0);
 
-            $customer = null;
-            if (! empty($data['customer_id'])) {
-                $customer = Customer::lockForUpdate()->find($data['customer_id']);
-            } elseif (! empty($data['customer_phone'])) {
-                $customer = Customer::firstOrCreate(['phone' => $data['customer_phone']], ['name' => $data['customer_name'] ?: 'Customer']);
-            }
-            if ($due > 0 && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'Select or add a customer to sell on credit (due).']);
+            if ($due > 0 && ! $customer) throw ValidationException::withMessages(['customer_id' => 'Select or add a customer to sell on credit (due).']);
+            if ($due > 0 && $customer && $customer->credit_limit !== null && ((float) $customer->balance + $due) > (float) $customer->credit_limit + 0.001) {
+                throw ValidationException::withMessages(['customer_id' => 'Credit limit exceeded. Available credit: ' . money(max(0, (float) $customer->credit_limit - (float) $customer->balance)) . '.']);
             }
 
             $sale->update([
@@ -162,10 +198,28 @@ class PosController extends Controller
                 'note'           => $data['note'] ?? null,
                 'prescription_id' => $prescription?->id,
                 'tax_profile_id' => $taxProfile?->id,
+                'promotion_id' => $promotion?->id,
+                'loyalty_points_redeemed' => $redeemPoints,
             ]);
 
             if ($due > 0) {
                 $customer->increment('balance', $due);
+            }
+            if ($promotion) {
+                $promotion->increment('used_count');
+                PromotionRedemption::create(['promotion_id' => $promotion->id, 'sale_id' => $sale->id, 'customer_id' => $customer?->id, 'discount_amount' => $promotionDiscount]);
+            }
+            if ($customer && $redeemPoints > 0) {
+                $customer->decrement('loyalty_points', $redeemPoints);
+                LoyaltyTransaction::create(['customer_id' => $customer->id, 'sale_id' => $sale->id, 'user_id' => $user->id, 'type' => 'redeemed', 'points' => $redeemPoints, 'balance_after' => (int) $customer->fresh()->loyalty_points, 'note' => 'Redeemed on invoice ' . $invoice]);
+            }
+            $earnRate = max(0, (int) setting('loyalty_earn_per_100', 1));
+            $earnedPoints = $customer && $earnRate > 0 ? (int) floor(min($paid, $total) / 100) * $earnRate : 0;
+            if ($customer && $earnedPoints > 0) {
+                $customer->increment('loyalty_points', $earnedPoints);
+                $balanceAfter = (int) $customer->fresh()->loyalty_points;
+                $sale->update(['loyalty_points_earned' => $earnedPoints]);
+                LoyaltyTransaction::create(['customer_id' => $customer->id, 'sale_id' => $sale->id, 'user_id' => $user->id, 'type' => 'earned', 'points' => $earnedPoints, 'balance_after' => $balanceAfter, 'note' => 'Earned on invoice ' . $invoice]);
             }
             if ($prescription) $prescription->update(['status' => 'dispensed']);
             app(JournalPostingService::class)->postSale($sale->load('items'));

@@ -25,6 +25,8 @@
             <div class="dashed"></div>
             <div class="d-flex justify-content-between"><span>Subtotal</span><span>{{ s.subtotal.toFixed(2) }}</span></div>
             <div v-if="s.discount" class="d-flex justify-content-between"><span>Discount</span><span>-{{ s.discount.toFixed(2) }}</span></div>
+            <div v-if="s.loyalty_points_redeemed" class="d-flex justify-content-between"><span>Points redeemed</span><span>{{ s.loyalty_points_redeemed }}</span></div>
+            <div v-if="s.loyalty_points_earned" class="d-flex justify-content-between"><span>Points earned</span><span>{{ s.loyalty_points_earned }}</span></div>
             <div v-if="s.tax" class="d-flex justify-content-between"><span>Tax ({{ s.tax_percent }}%)</span><span>{{ s.tax.toFixed(2) }}</span></div>
             <div class="d-flex justify-content-between fw-bold fs-6"><span>TOTAL</span><span>{{ money(s.total) }}</span></div>
             <div class="d-flex justify-content-between text-capitalize"><span>Paid ({{ s.payment_method }})</span><span>{{ s.paid.toFixed(2) }}</span></div>

@@ -18,6 +18,8 @@
                 <div class="col-md-4"><label class="form-label">Max cashier discount %</label><input v-model="s.max_discount_percent" type="number" step="0.01" min="0" max="100" class="form-control"></div>
                 <div class="col-md-6"><label class="form-label">Expiry alert (days before)</label><input v-model="s.expiry_alert_days" type="number" min="1" max="365" class="form-control"></div>
                 <div class="col-md-6"><label class="form-label">Customer return allowed within (days)</label><input v-model="s.return_days" type="number" min="0" max="365" class="form-control"><div class="form-text">0 = no limit</div></div>
+                <div class="col-md-6"><label class="form-label">Loyalty points per Rs 100 paid</label><input v-model.number="s.loyalty_earn_per_100" type="number" min="0" max="1000" class="form-control"><div class="form-text">Set 0 to disable earning points.</div></div>
+                <div class="col-md-6"><label class="form-label">Value of 1 loyalty point (currency)</label><input v-model.number="s.loyalty_point_value" type="number" min="0.01" step="0.01" class="form-control"><div class="form-text">Example: 1 point = Rs 1 discount.</div></div>
                 <div class="col-12"><label class="form-label">Daily report recipient email(s)</label><input v-model="s.daily_report_email" type="text" class="form-control" placeholder="owner@example.com, manager@example.com"><div class="form-text">Daily report is emailed automatically at 11:59 PM. Leave blank to send it to all Admin users.</div></div>
                 <div class="col-12"><div class="form-check form-switch">
                     <input id="cpe" v-model="priceEdit" class="form-check-input" type="checkbox"><label for="cpe" class="form-check-label">Allow cashier to change sale price in POS</label>
@@ -41,7 +43,7 @@ const priceEdit = computed({ get: () => s.cashier_price_edit === '1', set: (v) =
 
 onMounted(async () => {
     const { data } = await api.get('/settings');
-    Object.assign(s, { default_tax: 0, max_discount_percent: 10, expiry_alert_days: 60, return_days: 7, cashier_price_edit: '0', ...data });
+    Object.assign(s, { default_tax: 0, max_discount_percent: 10, expiry_alert_days: 60, return_days: 7, cashier_price_edit: '0', loyalty_earn_per_100: 1, loyalty_point_value: 1, ...data });
 });
 
 async function save() {

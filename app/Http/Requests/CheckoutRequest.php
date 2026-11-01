@@ -25,6 +25,8 @@ class CheckoutRequest extends FormRequest
             'customer_name'    => 'nullable|string|max:150',
             'customer_phone'   => 'nullable|string|max:30',
             'discount'         => 'nullable|numeric|min:0',
+            'promotion_code'   => 'nullable|string|max:40',
+            'redeem_points'    => 'nullable|integer|min:0',
             'tax_percent'      => 'nullable|numeric|min:0|max:100',
             'paid'             => 'required|numeric|min:0',
             'payment_method'   => 'required|in:cash,card,online,credit',

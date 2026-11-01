@@ -162,4 +162,62 @@ class ReportController extends Controller
         ], 'data' => $rows]);
     }
 
+    /** Demand-based replenishment suggestions for the active branch. */
+    public function reorderSuggestions(Request $request)
+    {
+        $days = max(7, min(90, $request->integer('history_days', 30)));
+        $lead = max(1, min(60, $request->integer('lead_days', 7)));
+        $target = max($lead, min(120, $request->integer('target_days', 30)));
+        $branchId = BranchContext::id();
+        $sold = SaleItem::join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->where('sales.branch_id', $branchId)->where('sales.sale_date', '>=', today()->subDays($days))
+            ->whereNotNull('sale_items.medicine_id')->groupBy('sale_items.medicine_id')
+            ->selectRaw('sale_items.medicine_id, SUM(sale_items.quantity - sale_items.returned_qty) as units_sold')
+            ->pluck('units_sold', 'medicine_id');
+        $stock = MedicineBatch::where('branch_id', $branchId)->where('quantity', '>', 0)
+            ->where(fn ($q) => $q->whereNull('expiry_date')->orWhere('expiry_date', '>=', today()))
+            ->groupBy('medicine_id')->selectRaw('medicine_id, SUM(quantity) as stock_units')->pluck('stock_units', 'medicine_id');
+        $incoming = DB::table('purchase_order_items')->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
+            ->join('medicines', 'medicines.id', '=', 'purchase_order_items.medicine_id')
+            ->where('purchase_orders.branch_id', $branchId)->whereIn('purchase_orders.status', ['pending_approval', 'approved'])
+            ->groupBy('purchase_order_items.medicine_id')
+            ->selectRaw('purchase_order_items.medicine_id, SUM((purchase_order_items.quantity + purchase_order_items.bonus_qty) * COALESCE(medicines.pack_size,1)) as incoming_units')
+            ->pluck('incoming_units', 'medicine_id');
+        $items = Medicine::where('is_active', true)->orderBy('name')->get(['id','name','strength','unit','reorder_level']);
+        $rows = $items->map(function ($medicine) use ($sold, $stock, $incoming, $days, $lead, $target) {
+            $unitsSold = (float) ($sold[$medicine->id] ?? 0);
+            $current = (int) ($stock[$medicine->id] ?? 0);
+            $incomingUnits = (int) ($incoming[$medicine->id] ?? 0);
+            $effectiveStock = $current + $incomingUnits;
+            $daily = $unitsSold / $days;
+            $daysCover = $daily > 0 ? round($effectiveStock / $daily, 1) : null;
+            $reorderPoint = (int) ceil($daily * $lead) + (int) $medicine->reorder_level;
+            $targetStock = (int) ceil($daily * $target) + (int) $medicine->reorder_level;
+            $suggested = $effectiveStock <= $reorderPoint ? max(0, $targetStock - $effectiveStock) : 0;
+            return ['medicine_id'=>$medicine->id,'name'=>$medicine->name,'strength'=>$medicine->strength,'unit'=>$medicine->unit,
+                'current_stock'=>$current,'incoming_units'=>$incomingUnits,'effective_stock'=>$effectiveStock,'units_sold'=>$unitsSold,'average_daily_sales'=>round($daily,2),'days_of_stock'=>$daysCover,
+                'reorder_level'=>(int)$medicine->reorder_level,'reorder_point'=>$reorderPoint,'suggested_quantity'=>$suggested];
+        })->filter(fn ($row) => $row['suggested_quantity'] > 0)->sortBy('days_of_stock')->values();
+
+        return response()->json(['parameters'=>['history_days'=>$days,'lead_days'=>$lead,'target_days'=>$target], 'data'=>$rows]);
+    }
+
+    /** Outstanding customer invoices grouped into ageing buckets for the active branch. */
+    public function customerAging()
+    {
+        $rows = Sale::with('customer:id,name,phone')->where('branch_id', BranchContext::id())->where('due', '>', 0)->get(['id','customer_id','customer_name','invoice_no','sale_date','due']);
+        $customers = $rows->groupBy('customer_id')->map(function ($invoices, $customerId) {
+            $buckets = ['current'=>0,'days_1_30'=>0,'days_31_60'=>0,'days_61_90'=>0,'over_90'=>0];
+            foreach ($invoices as $invoice) {
+                $age = $invoice->sale_date->diffInDays(today());
+                $key = $age <= 0 ? 'current' : ($age <= 30 ? 'days_1_30' : ($age <= 60 ? 'days_31_60' : ($age <= 90 ? 'days_61_90' : 'over_90')));
+                $buckets[$key] += (float) $invoice->due;
+            }
+            return ['customer_id'=>$customerId,'customer_name'=>$invoices->first()->customer?->name ?? $invoices->first()->customer_name,
+                'phone'=>$invoices->first()->customer?->phone,'total_due'=>round((float)$invoices->sum('due'),2),
+                'invoice_count'=>$invoices->count(),'buckets'=>array_map(fn($v)=>round($v,2),$buckets)];
+        })->values()->sortByDesc('total_due');
+        return response()->json(['data'=>$customers]);
+    }
+
 }

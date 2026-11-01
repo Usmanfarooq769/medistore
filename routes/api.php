@@ -50,6 +50,8 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
 
     // Prescriptions: cashiers can upload/view; only admin can approve/reject.
     Route::get('tax-profiles', [\App\Http\Controllers\Api\TaxProfileController::class, 'index']);
+    Route::get('promotions/active', [\App\Http\Controllers\Api\PromotionController::class, 'active']);
+    Route::post('promotions/preview', [\App\Http\Controllers\Api\PromotionController::class, 'preview']);
     Route::get('prescriptions', [PrescriptionController::class, 'index']);
     Route::get('prescriptions/find/{prescriptionNo}', [PrescriptionController::class, 'find']);
     Route::get('prescriptions/{prescription}/file', [PrescriptionController::class, 'file']);
@@ -57,6 +59,7 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
 
     // Customers
     Route::get('customers/{customer}/sales', [CustomerController::class, 'sales']);
+    Route::get('customers/{customer}/statement', [CustomerController::class, 'statement']);
     Route::post('customers/{customer}/payments', [CustomerController::class, 'payment']);
     Route::apiResource('customers', CustomerController::class)->except('destroy');
 
@@ -104,6 +107,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::put('tax-profiles/{taxProfile}', [\App\Http\Controllers\Api\TaxProfileController::class, 'update']);
     Route::delete('tax-profiles/{taxProfile}', [\App\Http\Controllers\Api\TaxProfileController::class, 'destroy']);
     Route::get('reports/tax', [\App\Http\Controllers\Api\TaxProfileController::class, 'report']);
+    Route::get('reports/reorder-suggestions', [ReportController::class, 'reorderSuggestions']);
+    Route::get('reports/customer-aging', [ReportController::class, 'customerAging']);
+    Route::apiResource('promotions', \App\Http\Controllers\Api\PromotionController::class)->except(['show']);
     Route::get('accounting/accounts', [\App\Http\Controllers\Api\AccountingController::class, 'accounts']);
     Route::get('accounting/journals', [\App\Http\Controllers\Api\AccountingController::class, 'journals']);
     Route::post('accounting/journals', [\App\Http\Controllers\Api\AccountingController::class, 'storeJournal']);

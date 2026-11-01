@@ -28,6 +28,8 @@ class SettingController extends Controller
             'cashier_price_edit'   => 'required|in:0,1',
             'receipt_footer'       => 'nullable|string|max:255',
             'daily_report_email'   => 'nullable|string|max:1000',
+            'loyalty_earn_per_100' => 'required|integer|min:0|max:1000',
+            'loyalty_point_value'  => 'required|numeric|min:0.01|max:10000',
         ]);
 
         if (! empty($data['daily_report_email'])) {

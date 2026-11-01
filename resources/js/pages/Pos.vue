@@ -69,9 +69,18 @@
                     </Autocomplete>
                     <div v-else class="d-flex justify-content-between align-items-center small border rounded px-2 py-1">
                         <span><i class="bi bi-person-check text-success"></i> <b>{{ customer.name }}</b> {{ customer.phone }}
-                            <span v-if="customer.balance > 0" class="badge bg-danger">Due {{ money(customer.balance) }}</span></span>
-                        <button class="btn btn-sm text-muted p-0" @click="customer = null"><i class="bi bi-x-lg"></i></button>
+                            <span v-if="customer.balance > 0" class="badge bg-danger">Due {{ money(customer.balance) }}</span>
+                            <span class="badge bg-info-subtle text-info ms-1">{{ customer.loyalty_points || 0 }} pts</span>
+                            <span v-if="customer.credit_limit !== null && customer.credit_limit !== undefined" class="badge bg-secondary-subtle text-secondary">Credit {{ money(customer.available_credit) }} left</span></span>
+                        <button class="btn btn-sm text-muted p-0" @click="customer = null; redeemPoints = 0"><i class="bi bi-x-lg"></i></button>
                     </div>
+                </div>
+
+                <div class="px-3 pt-2">
+                    <div class="input-group input-group-sm"><input v-model.trim="promotionCode" class="form-control text-uppercase" placeholder="Coupon / promotion code" @keyup.enter="applyPromotion"><button class="btn btn-outline-primary" type="button" @click="applyPromotion">Apply</button></div>
+                    <div v-if="promotion" class="small text-success mt-1"><i class="bi bi-check-circle"></i> {{ promotion.name }} applied: {{ money(promotion.discount) }}</div>
+                    <div v-if="promotionError" class="small text-danger mt-1">{{ promotionError }}</div>
+                    <div v-if="customer && customer.loyalty_points > 0" class="d-flex align-items-center gap-2 mt-2"><label class="small text-nowrap">Redeem points</label><input v-model.number="redeemPoints" type="number" min="0" :max="customer.loyalty_points" class="form-control form-control-sm" style="max-width:110px"><span class="small text-muted">Available: {{ customer.loyalty_points }}</span></div>
                 </div>
 
                 <div class="cart-list mt-2">
@@ -167,6 +176,10 @@ const held = ref(JSON.parse(localStorage.getItem('pos_held') || '[]'));
 const heldOpen = ref(false);
 const customer = ref(null);
 const discount = ref('');
+const promotionCode = ref('');
+const promotion = ref(null);
+const promotionError = ref('');
+const redeemPoints = ref(0);
 const discPct = ref(false);
 const taxPercent = ref(Number(auth.settings.default_tax || 0));
 const taxProfiles = ref([]);
@@ -276,7 +289,11 @@ function onSearchKey(e) {
 const totals = computed(() => {
     const sub = Math.round(cart.value.reduce((s, c) => s + c.price * c.qty, 0) * 100) / 100;
     const dv = Number(discount.value) || 0;
-    const disc = Math.round(Math.min(discPct.value ? (sub * Math.min(dv, 100)) / 100 : dv, sub) * 100) / 100;
+    const manualDisc = Math.round(Math.min(discPct.value ? (sub * Math.min(dv, 100)) / 100 : dv, sub) * 100) / 100;
+    const promoDisc = Math.min(Number(promotion.value?.discount || 0), Math.max(0, sub - manualDisc));
+    const pointValue = Math.max(0.01, Number(auth.settings.loyalty_point_value || 1));
+    const pointsDisc = Math.min(Math.max(0, Number(redeemPoints.value) || 0) * pointValue, Math.max(0, sub - manualDisc - promoDisc));
+    const disc = Math.round((manualDisc + promoDisc + pointsDisc) * 100) / 100;
     const tp = Number(taxPercent.value) || 0;
     const taxBase = sub - disc;
     const selectedProfile = taxProfiles.value.find(x => x.id === taxProfileId.value);
@@ -284,9 +301,10 @@ const totals = computed(() => {
     const tax = Math.round((inclusive && tp > 0 ? taxBase - (taxBase / (1 + tp / 100)) : taxBase * tp / 100) * 100) / 100;
     const total = Math.round((inclusive ? taxBase : taxBase + tax) * 100) / 100;
     const p = method.value === 'credit' ? Number(paid.value) || 0 : paid.value === '' ? total : Number(paid.value);
-    return { sub, disc, tp, tax, total, paid: p, change: Math.round((p - total) * 100) / 100, units: cart.value.reduce((s, c) => s + c.qty, 0) };
+    return { sub, disc, manualDisc, promoDisc, pointsDisc, tp, tax, total, paid: p, change: Math.round((p - total) * 100) / 100, units: cart.value.reduce((s, c) => s + c.qty, 0) };
 });
 const quickCash = computed(() => [...new Set([100, 500, 1000, 5000].map((s) => Math.ceil(totals.value.total / s) * s).filter((v) => v > totals.value.total))].slice(0, 3));
+watch(() => [totals.value.sub, customer.value?.id], () => { if (promotionCode.value.trim()) applyPromotion(true); });
 
 function setMethod(m) {
     method.value = m;
@@ -295,7 +313,14 @@ function setMethod(m) {
 }
 
 /* ---------- hold / clear ---------- */
-function resetSale() { cart.value = []; customer.value = null; discount.value = ''; paid.value = ''; method.value = 'cash'; }
+function resetSale() { cart.value = []; customer.value = null; discount.value = ''; promotionCode.value = ''; promotion.value = null; promotionError.value = ''; redeemPoints.value = 0; paid.value = ''; method.value = 'cash'; }
+
+async function applyPromotion(silent = false) {
+    promotionError.value = ''; promotion.value = null;
+    if (!promotionCode.value.trim()) return;
+    try { const { data } = await api.post('/promotions/preview', { code: promotionCode.value, subtotal: totals.value.sub, customer_id: customer.value?.id || null }, { silent: true }); promotion.value = data; }
+    catch (e) { promotionError.value = e.response?.data?.message || 'Promotion could not be applied.'; if (!silent) toast.fire({ icon: 'warning', title: promotionError.value }); }
+}
 function hold() {
     if (!cart.value.length) return toast.fire({ icon: 'info', title: 'Cart is empty' });
     held.value.unshift({ cart: cart.value, customer: customer.value, at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
@@ -316,6 +341,7 @@ async function clearCart() {
 /* ---------- checkout ---------- */
 async function checkout() {
     if (busy.value || !cart.value.length) return;
+    if (promotionCode.value.trim() && !promotion.value) { await applyPromotion(); if (!promotion.value) return; }
     const t = totals.value;
     if (t.change < 0 && !customer.value) {
         return Swal.fire({ icon: 'warning', title: 'Payment short', html: `Total <b>${money(t.total)}</b>, paid <b>${money(t.paid)}</b>.<br>Select a customer to sell on credit.` });
@@ -335,7 +361,7 @@ async function checkout() {
         const { data } = await api.post('/pos/checkout', {
             items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })),
             customer_id: customer.value?.id || null, prescription_id: prescriptionId,
-            discount: t.disc, tax_percent: t.tp, tax_profile_id: taxProfileId.value, paid: t.paid, payment_method: method.value,
+            discount: t.manualDisc, promotion_code: promotionCode.value || null, redeem_points: Number(redeemPoints.value) || 0, tax_percent: t.tp, tax_profile_id: taxProfileId.value, paid: t.paid, payment_method: method.value,
         });
         resetSale();
         loadProducts();

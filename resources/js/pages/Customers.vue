@@ -10,6 +10,7 @@
                 <div class="small text-muted">{{ item.address }}</div>
             </template>
             <template #cell-sales_count="{ item }"><span class="badge bg-secondary">{{ item.sales_count }}</span></template>
+            <template #cell-loyalty_points="{ item }"><span class="badge bg-info-subtle text-info">{{ item.loyalty_points || 0 }}</span></template>
             <template #cell-balance="{ item }"><span class="fw-semibold" :class="item.balance > 0 ? 'text-danger' : 'text-success'">{{ money(item.balance) }}</span></template>
             <template #actions="{ item }">
                 <button v-if="item.balance > 0" class="btn btn-sm btn-outline-warning" title="Receive payment" @click="pay = item"><i class="bi bi-cash-coin"></i></button>
@@ -36,11 +37,13 @@ const fields = [
     { key: 'name', label: 'Name', required: true },
     { key: 'phone', label: 'Phone', col: 'col-md-6' },
     { key: 'address', label: 'Address', col: 'col-md-6' },
+    ...(auth.isAdmin ? [{ key: 'credit_limit', label: 'Credit limit (blank = unlimited)', type: 'number', step: '0.01', min: 0, col: 'col-md-6', hint: 'Blank means unlimited credit.' }] : []),
 ];
 const columns = [
     { key: 'name', label: 'Customer' },
     { key: 'phone', label: 'Phone' },
     { key: 'sales_count', label: 'Invoices' },
+    { key: 'loyalty_points', label: 'Points' },
     { key: 'balance', label: 'Due (receivable)' },
 ];
 </script>

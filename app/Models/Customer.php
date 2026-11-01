@@ -6,13 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class Customer extends Model
 {
-    protected $fillable = ['name', 'phone', 'address', 'balance'];
+    protected $fillable = ['name', 'phone', 'address', 'balance', 'credit_limit', 'loyalty_points'];
 
-    protected $casts = ['balance' => 'decimal:2'];
+    protected $casts = ['balance' => 'decimal:2', 'credit_limit' => 'decimal:2', 'loyalty_points' => 'integer'];
 
     public function sales()
     {
         return $this->hasMany(Sale::class);
+    }
+
+    public function loyaltyTransactions()
+    {
+        return $this->hasMany(LoyaltyTransaction::class)->latest();
     }
 
     public function payments()
