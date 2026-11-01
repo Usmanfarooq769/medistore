@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Medicine;
 use App\Models\MedicineBatch;
 use App\Models\StockMovement;
+use App\Services\BranchContext;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
@@ -23,6 +24,7 @@ class StockService
 
         $batch = MedicineBatch::create([
             'medicine_id'      => $medicine->id,
+            'branch_id'        => $data['branch_id'] ?? BranchContext::id(),
             'purchase_id'      => $data['purchase_id'] ?? null,
             'supplier_id'      => $data['supplier_id'] ?? null,
             'batch_no'         => $data['batch_no'] ?? null,
@@ -33,7 +35,7 @@ class StockService
             'quantity'         => $qty,
         ]);
 
-        $this->log($medicine, $qty, $batch->id, $type, $reference, $data['note'] ?? null);
+        $this->log($medicine, $qty, $batch->id, $type, $reference, $data['note'] ?? null, (int) $batch->branch_id);
 
         return $batch;
     }
@@ -44,7 +46,7 @@ class StockService
         if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1) {
             throw ValidationException::withMessages(['items' => "Convert legacy pack stock to individual units for {$medicine->display_name} before selling."]);
         }
-        $batches = $medicine->sellableBatches()->lockForUpdate()->get();
+        $batches = $medicine->sellableBatches()->where('branch_id', BranchContext::id())->lockForUpdate()->get();
         $available = (int) $batches->sum('quantity');
 
         if ($available < $qty) {
@@ -63,7 +65,7 @@ class StockService
             $batch->decrement('quantity', $take);
             $remaining -= $take;
             $allocations[] = [$batch, $take];
-            $this->log($medicine, -$take, $batch->id, 'sale', $reference);
+            $this->log($medicine, -$take, $batch->id, 'sale', $reference, null, (int) $batch->branch_id);
         }
 
         return $allocations;
@@ -87,7 +89,7 @@ class StockService
         }
 
         $batch->increment('quantity', $delta);
-        $this->log($medicine, $delta, $batch->id, $type, $reference, $note);
+        $this->log($medicine, $delta, $batch->id, $type, $reference, $note, (int) $batch->branch_id);
     }
 
     /** Put stock back (sale void / return) – recreates a batch if original was deleted */
@@ -98,7 +100,7 @@ class StockService
         if (! $batch) {
             $medicine = Medicine::findOrFail($medicineId);
             $batch = MedicineBatch::create([
-                'medicine_id' => $medicine->id, 'batch_no' => 'RETURN', 'purchase_price' => $medicine->purchase_price,
+                'medicine_id' => $medicine->id, 'branch_id' => BranchContext::id(), 'batch_no' => 'RETURN', 'purchase_price' => $medicine->purchase_price,
                 'sale_price' => $medicine->sale_price, 'initial_quantity' => 0, 'quantity' => 0,
             ]);
         }
@@ -115,7 +117,7 @@ class StockService
         $batch->delete();
     }
 
-    private function log(Medicine $medicine, int $delta, ?int $batchId, string $type, string $reference, ?string $note = null): void
+    private function log(Medicine $medicine, int $delta, ?int $batchId, string $type, string $reference, ?string $note = null, ?int $branchId = null): void
     {
         $medicine->total_stock = (int) $medicine->total_stock + $delta;
         $medicine->saveQuietly();
@@ -129,13 +131,17 @@ class StockService
             'reference'         => $reference,
             'note'              => $note,
             'user_id'           => auth()->id(),
+            'branch_id'         => $branchId ?? BranchContext::id(),
         ]);
     }
 
     /** Clear cached dashboard / alert numbers after any stock change */
-    public static function flushCache(): void
+    public static function flushCache(?array $branchIds = null): void
     {
-        Cache::forget('alerts.counts');
-        Cache::forget('dashboard.stats.' . today()->toDateString());
+        $branchIds = $branchIds ?: [BranchContext::id()];
+        foreach (array_unique($branchIds) as $branchId) {
+            Cache::forget('alerts.counts.' . $branchId);
+            Cache::forget('dashboard.stats.' . $branchId . '.' . today()->toDateString());
+        }
     }
 }

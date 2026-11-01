@@ -10,6 +10,8 @@ use App\Models\Payment;
 use App\Models\Purchase;
 use App\Models\Supplier;
 use App\Services\StockService;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -23,7 +25,7 @@ class PurchaseController extends Controller
     public function index(Request $request)
     {
         return PurchaseResource::collection(
-            Purchase::with('supplier:id,name')->withCount('items')
+            Purchase::with('supplier:id,name')->withCount('items')->where('branch_id', BranchContext::id())
                 ->when($request->search, fn ($q, $s) => $q->where(fn ($w) => $w->where('reference_no', 'like', "%{$s}%")->orWhere('supplier_invoice_no', 'like', "%{$s}%")))
                 ->when($request->supplier_id, fn ($q, $v) => $q->where('supplier_id', $v))
                 ->when($request->status, fn ($q, $v) => $q->where('payment_status', $v))
@@ -58,6 +60,7 @@ class PurchaseController extends Controller
                 'payment_status'      => payment_status($total, $paid),
                 'note'                => $data['note'] ?? null,
                 'user_id'             => auth()->id(),
+                'branch_id'           => BranchContext::id(),
             ]);
             $purchase->update(['reference_no' => 'PUR-' . now()->format('Ymd') . '-' . str_pad($purchase->id, 5, '0', STR_PAD_LEFT)]);
 
@@ -72,6 +75,7 @@ class PurchaseController extends Controller
 
                 $batch = $this->stock->addBatch($medicine, [
                     'purchase_id'    => $purchase->id,
+                    'branch_id'      => BranchContext::id(),
                     'supplier_id'    => $data['supplier_id'],
                     'batch_no'       => $row['batch_no'],
                     'expiry_date'    => $row['expiry_date'],
@@ -99,11 +103,12 @@ class PurchaseController extends Controller
                 Payment::create([
                     'party_type' => 'supplier', 'party_id' => $data['supplier_id'], 'purchase_id' => $purchase->id,
                     'amount' => $paid, 'method' => $data['payment_method'] ?? 'cash', 'payment_date' => $data['purchase_date'],
-                    'note' => 'Paid with ' . $purchase->reference_no, 'user_id' => auth()->id(),
+                    'note' => 'Paid with ' . $purchase->reference_no, 'user_id' => auth()->id(), 'branch_id' => BranchContext::id(),
                 ]);
             }
 
             Supplier::whereKey($data['supplier_id'])->increment('balance', $total - $paid);
+            app(JournalPostingService::class)->postPurchase($purchase->load('items'));
 
             return $purchase;
         });
@@ -115,12 +120,15 @@ class PurchaseController extends Controller
 
     public function show(Purchase $purchase)
     {
+        abort_unless((int)$purchase->branch_id === BranchContext::id(), 404);
         return new PurchaseResource($purchase->load(['supplier', 'user:id,name', 'items.medicine:id,name,strength,unit']));
     }
 
     /** Void – only if nothing from this purchase was sold / returned / adjusted */
     public function destroy(Purchase $purchase)
     {
+        abort_unless((int)$purchase->branch_id === BranchContext::id(), 404);
+        abort_if((float)$purchase->paid > 0, 422, 'This purchase has supplier payments. Process a purchase return or payment adjustment instead of voiding it.');
         $purchase->load('items.batch');
         foreach ($purchase->items as $item) {
             abort_if($item->batch && $item->batch->quantity !== $item->batch->initial_quantity, 422,
@@ -128,6 +136,7 @@ class PurchaseController extends Controller
         }
 
         DB::transaction(function () use ($purchase) {
+            app(JournalPostingService::class)->reverseSource(Purchase::class, $purchase->id, (int) $purchase->branch_id, 'Purchase voided ' . $purchase->reference_no);
             foreach ($purchase->items as $item) {
                 if ($item->batch) {
                     $this->stock->removeBatch($item->batch, $purchase->reference_no);

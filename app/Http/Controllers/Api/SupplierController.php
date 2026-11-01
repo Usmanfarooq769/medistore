@@ -10,6 +10,8 @@ use App\Models\PurchaseReturn;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 
 /** Distributor / wholesaler the store BUYS stock from */
 class SupplierController extends Controller
@@ -80,19 +82,21 @@ class SupplierController extends Controller
     /** Pay supplier – applied to oldest unpaid purchases first */
     public function payment(Request $request, Supplier $supplier)
     {
+        $branchDue = (float) Purchase::where('supplier_id', $supplier->id)->where('branch_id', BranchContext::id())->sum('due');
+        abort_if($branchDue <= 0, 422, 'This supplier has no outstanding balance in the active branch.');
         $data = $request->validate([
-            'amount'       => 'required|numeric|min:0.01|max:' . max((float) $supplier->balance, 0.01),
+            'amount'       => 'required|numeric|min:0.01|max:' . max($branchDue, 0.01),
             'method'       => 'required|in:cash,bank,cheque,online',
             'payment_date' => 'required|date',
             'note'         => 'nullable|string|max:255',
-        ], ['amount.max' => 'Amount cannot be more than due balance (' . money($supplier->balance) . ').']);
+        ], ['amount.max' => 'Amount cannot exceed this branch supplier due (' . money($branchDue) . ').']);
 
-        DB::transaction(function () use ($data, $supplier) {
-            Payment::create($data + ['party_type' => 'supplier', 'party_id' => $supplier->id, 'user_id' => auth()->id()]);
+        $payment = DB::transaction(function () use ($data, $supplier) {
+            $payment = Payment::create($data + ['party_type' => 'supplier', 'party_id' => $supplier->id, 'user_id' => auth()->id(), 'branch_id' => BranchContext::id()]);
             $supplier->decrement('balance', $data['amount']);
 
             $left = (float) $data['amount'];
-            foreach (Purchase::where('supplier_id', $supplier->id)->where('due', '>', 0)->orderBy('purchase_date')->lockForUpdate()->get() as $p) {
+            foreach (Purchase::where('supplier_id', $supplier->id)->where('branch_id', BranchContext::id())->where('due', '>', 0)->orderBy('purchase_date')->lockForUpdate()->get() as $p) {
                 if ($left <= 0) {
                     break;
                 }
@@ -103,6 +107,8 @@ class SupplierController extends Controller
                 $p->save();
                 $left -= $pay;
             }
+            app(JournalPostingService::class)->postPayment($payment);
+            return $payment;
         });
 
         return response()->json(['message' => 'Payment of ' . money($data['amount']) . ' saved.']);

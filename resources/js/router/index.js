@@ -11,6 +11,11 @@ const routes = [
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
+    { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
+    { path: '/purchase-orders', component: () => import('../pages/PurchaseOrders.vue'), meta: { ...admin, title: 'Purchase Orders' } },
+    { path: '/prescriptions', component: () => import('../pages/Prescriptions.vue'), meta: { title: 'Prescriptions' } },
+    { path: '/branches', component: () => import('../pages/Branches.vue'), meta: { ...admin, title: 'Branches & Transfers' } },
+    { path: '/finance', component: () => import('../pages/Finance.vue'), meta: { ...admin, title: 'Finance & Accounting' } },
     { path: '/cashier/closing', component: () => import('../pages/CashierClosing.vue'), meta: { title: 'Cashier Shift & Closing' } },
     { path: '/reports/batch-profitability', component: () => import('../pages/reports/BatchProfitability.vue'), meta: { admin: true, title: 'Batch Profitability' } },
 

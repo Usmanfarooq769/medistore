@@ -10,6 +10,8 @@ use App\Models\Payment;
 use App\Models\Sale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use Illuminate\Validation\Rule;
 
 class CustomerController extends Controller
@@ -60,19 +62,21 @@ class CustomerController extends Controller
     /** Receive due payment – applied to oldest credit invoices */
     public function payment(Request $request, Customer $customer)
     {
+        $branchDue = (float) Sale::where('customer_id', $customer->id)->where('branch_id', BranchContext::id())->sum('due');
+        abort_if($branchDue <= 0, 422, 'This customer has no outstanding balance in the active branch.');
         $data = $request->validate([
-            'amount'       => 'required|numeric|min:0.01|max:' . max((float) $customer->balance, 0.01),
+            'amount'       => 'required|numeric|min:0.01|max:' . max($branchDue, 0.01),
             'method'       => 'required|in:cash,card,online',
             'payment_date' => 'required|date',
             'note'         => 'nullable|string|max:255',
-        ], ['amount.max' => 'Amount cannot be more than due balance (' . money($customer->balance) . ').']);
+        ], ['amount.max' => 'Amount cannot exceed this branch customer due (' . money($branchDue) . ').']);
 
-        DB::transaction(function () use ($data, $customer) {
-            Payment::create($data + ['party_type' => 'customer', 'party_id' => $customer->id, 'user_id' => auth()->id()]);
+        $payment = DB::transaction(function () use ($data, $customer) {
+            $payment = Payment::create($data + ['party_type' => 'customer', 'party_id' => $customer->id, 'user_id' => auth()->id(), 'branch_id' => BranchContext::id()]);
             $customer->decrement('balance', $data['amount']);
 
             $left = (float) $data['amount'];
-            foreach (Sale::where('customer_id', $customer->id)->where('due', '>', 0)->orderBy('id')->lockForUpdate()->get() as $sale) {
+            foreach (Sale::where('customer_id', $customer->id)->where('branch_id', BranchContext::id())->where('due', '>', 0)->orderBy('id')->lockForUpdate()->get() as $sale) {
                 if ($left <= 0) {
                     break;
                 }
@@ -83,6 +87,8 @@ class CustomerController extends Controller
                 $sale->save();
                 $left -= $pay;
             }
+            app(JournalPostingService::class)->postPayment($payment);
+            return $payment;
         });
 
         return response()->json(['message' => 'Received ' . money($data['amount']) . '.']);

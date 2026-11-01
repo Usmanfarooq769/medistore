@@ -1,6 +1,7 @@
 <template>
     <div>
-        
+        <div class="alert alert-light border small py-2"><i class="bi bi-lightbulb text-warning"></i>
+            Step 1: add the medicine here. Step 2: add <b>stock</b> through <router-link to="/purchases/create">New Purchase</router-link> (batch + expiry). Stock is never typed by hand.</div>
         <div class="card">
             <div class="card-header">
                 <div class="row g-2 align-items-center">
@@ -21,6 +22,26 @@
                         <button class="btn btn-outline-primary" @click="$refs.csvInput.click()"><i class="bi bi-upload"></i> Import CSV</button>
                         <input ref="csvInput" type="file" accept=".csv,text/csv" class="d-none" @change="importCsv">
                         <button class="btn btn-success" @click="openForm()"><i class="bi bi-plus-lg"></i> Add Medicine</button>
+                    </div>
+                </div>
+                <div class="border-top mt-3 pt-3">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div class="small text-muted"><i class="bi bi-info-circle me-1"></i> Download the template, fill one medicine per row in Excel, then upload the saved CSV file.</div>
+                        <button class="btn btn-sm btn-link text-decoration-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#medicineCsvGuide" aria-expanded="false" aria-controls="medicineCsvGuide">View CSV column guide <i class="bi bi-chevron-down"></i></button>
+                    </div>
+                    <div class="collapse mt-3" id="medicineCsvGuide">
+                        <div class="bg-light rounded p-3 small">
+                            <div class="fw-semibold mb-2">Supported CSV columns</div>
+                            <div class="row g-2">
+                                <div class="col-md-6"><b>Required:</b> <code>name</code> (medicine/brand name). Other fields can be left blank.</div>
+                                <div class="col-md-6"><b>Prices:</b> <code>purchase_price</code>, <code>sale_price</code>. Sale price must not be lower than purchase price.</div>
+                                <div class="col-md-6"><b>Medicine details:</b> <code>generic_name</code>, <code>strength</code>, <code>category</code>, <code>manufacturer</code>, <code>barcode</code>.</div>
+                                <div class="col-md-6"><b>Inventory settings:</b> <code>unit</code>, <code>pack_size</code>, <code>reorder_level</code>, <code>rack</code>.</div>
+                            </div>
+                            <hr class="my-2">
+                            <div><b>Important:</b> <code>pack_size</code> means units in one pack (e.g. 10 tablets per strip). CSV import does not add stock. Add opening stock through <router-link to="/purchases/create">New Purchase</router-link> with batch number, expiry date and supplier.</div>
+                            <div class="text-muted mt-1">Existing medicines are matched by barcode; if barcode is blank, matching uses medicine name + strength. Blank fields do not erase existing values.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -82,7 +103,7 @@
                     <div v-if="form.sale_price && form.purchase_price" class="form-text" :class="margin < 0 ? 'text-danger' : 'text-success'">Margin {{ money(margin) }} ({{ marginPct }}%)</div></div>
                 <div class="col-md-4"><label class="form-label">Re-order level *</label><input v-model="form.reorder_level" type="number" min="0" class="form-control" required><div class="form-text">Low-stock alert at ≤ this individual-unit quantity</div></div>
                 <div class="col-md-4"><label class="form-label">Rack / shelf</label><input v-model="form.rack" class="form-control"></div>
-                <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch"><input id="act" v-model="form.is_active" class="form-check-input" type="checkbox"><label class="form-check-label" for="act">Active</label></div></div>
+                <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch me-3"><input id="rx" v-model="form.requires_prescription" class="form-check-input" type="checkbox"><label class="form-check-label" for="rx">Prescription required</label></div><div class="form-check form-switch"><input id="act" v-model="form.is_active" class="form-check-input" type="checkbox"><label class="form-check-label" for="act">Active</label></div></div>
                 <div class="col-12 text-end">
                     <button type="button" class="btn btn-light me-2" @click="show = false">Cancel</button>
                     <button class="btn btn-success" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save</button>
@@ -114,7 +135,7 @@ const downloadingTemplate = ref(false);
 const editId = ref(null);
 const existingStock = ref(0);
 const existingHasHistory = ref(false);
-const blank = { name: '', strength: '', generic_name: '', category_id: null, manufacturer_id: null, unit: 'strip', pack_size: 1, barcode: '', purchase_price: '', sale_price: '', reorder_level: 10, rack: '', is_active: true };
+const blank = { name: '', strength: '', generic_name: '', category_id: null, manufacturer_id: null, unit: 'strip', pack_size: 1, barcode: '', purchase_price: '', sale_price: '', reorder_level: 10, rack: '', is_active: true, requires_prescription: false };
 const form = reactive({ ...blank });
 const margin = computed(() => Number(form.sale_price) - Number(form.purchase_price));
 const marginPct = computed(() => (Number(form.purchase_price) ? ((margin.value / Number(form.purchase_price)) * 100).toFixed(1) : 0));

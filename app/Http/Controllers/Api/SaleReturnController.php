@@ -12,6 +12,8 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Services\StockService;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -33,7 +35,7 @@ class SaleReturnController extends Controller
 
     public function index(Request $request)
     {
-        $q = SaleReturn::with(['sale:id,invoice_no', 'user:id,name'])->withCount('items')
+        $q = SaleReturn::with(['sale:id,invoice_no', 'user:id,name'])->withCount('items')->where('branch_id', BranchContext::id())
             ->when($request->search, fn ($q, $s) => $q->where(fn ($w) => $w->where('return_no', 'like', "%{$s}%")
                 ->orWhere('customer_name', 'like', "%{$s}%")
                 ->orWhereHas('sale', fn ($x) => $x->where('invoice_no', 'like', "%{$s}%"))))
@@ -50,6 +52,7 @@ class SaleReturnController extends Controller
 
     public function show(SaleReturn $saleReturn)
     {
+        abort_unless((int)$saleReturn->branch_id === BranchContext::id(), 404);
         return new SaleReturnResource($saleReturn->load(['items', 'sale:id,invoice_no', 'user:id,name']));
     }
 
@@ -62,10 +65,11 @@ class SaleReturnController extends Controller
             throw ValidationException::withMessages(['items' => 'Enter a return quantity for at least one medicine.']);
         }
 
-        $return = DB::transaction(fn () => ! empty($data['sale_id'])
-            ? $this->returnWithInvoice($data, $items)
-            : $this->returnWithoutInvoice($data, $items));
-
+        $return = DB::transaction(function () use ($data, $items) {
+            $created = ! empty($data['sale_id']) ? $this->returnWithInvoice($data, $items) : $this->returnWithoutInvoice($data, $items);
+            app(JournalPostingService::class)->postSaleReturn($created->load('items'));
+            return $created;
+        });
         StockService::flushCache();
 
         $restocked = $return->items->where('restocked', true)->sum('quantity');
@@ -80,7 +84,7 @@ class SaleReturnController extends Controller
 
     private function returnWithInvoice(array $data, $items): SaleReturn
     {
-        $sale = Sale::lockForUpdate()->findOrFail($data['sale_id']);
+        $sale = Sale::where('branch_id', BranchContext::id())->lockForUpdate()->findOrFail($data['sale_id']);
         $return = $this->createHeader($data, $sale->customer_id, $sale->customer_name, $sale->id);
 
         // refund at NET price (invoice discount + tax shared proportionally)
@@ -143,7 +147,7 @@ class SaleReturnController extends Controller
 
         foreach ($items as $row) {
             $medicine = Medicine::findOrFail($row['medicine_id']);
-            $batch = MedicineBatch::where('medicine_id', $medicine->id)->findOrFail($row['medicine_batch_id']);
+            $batch = MedicineBatch::where('branch_id', BranchContext::id())->where('medicine_id', $medicine->id)->findOrFail($row['medicine_batch_id']);
 
             $lineTotal = round((float) $row['price'] * $row['quantity'], 2);
             $subtotal += $lineTotal;
@@ -192,6 +196,7 @@ class SaleReturnController extends Controller
             'refund_method' => $data['refund_method'],
             'reason'        => $data['reason'] ?? null,
             'user_id'       => auth()->id(),
+            'branch_id'     => BranchContext::id(),
         ]);
         $return->update(['return_no' => 'RET-' . now()->format('Ymd') . '-' . str_pad($return->id, 5, '0', STR_PAD_LEFT)]);
 

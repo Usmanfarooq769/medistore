@@ -37,8 +37,8 @@ class SendDailyStoreReport extends Command
             return self::FAILURE;
         }
 
-        $sales = Sale::whereDate('sale_date', $date)->with('user:id,name')->withCount('items')->orderBy('id')->get();
-        $purchases = Purchase::whereDate('purchase_date', $date)->with('supplier:id,name')->withCount('items')->orderBy('id')->get();
+        $sales = Sale::whereDate('sale_date', $date)->with(['user:id,name','branch:id,name'])->withCount('items')->orderBy('id')->get();
+        $purchases = Purchase::whereDate('purchase_date', $date)->with(['supplier:id,name','branch:id,name'])->withCount('items')->orderBy('id')->get();
         $saleReturns = SaleReturn::whereDate('return_date', $date)->get();
         $purchaseReturns = PurchaseReturn::whereDate('return_date', $date)->get();
         $customerPayments = Payment::where('party_type', 'customer')->whereDate('payment_date', $date)->sum('amount');
@@ -49,22 +49,23 @@ class SendDailyStoreReport extends Command
         $newMedicines = $newMedicineRecords->count();
         $adjustments = StockAdjustment::whereDate('created_at', $date)->count();
         $saleLines = DB::table('sale_items')->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->whereDate('sales.sale_date', $date)->orderBy('sales.id')
-            ->get(['sales.invoice_no', 'sales.customer_name', 'sale_items.medicine_name', 'sale_items.batch_no', 'sale_items.expiry_date', 'sale_items.quantity', 'sale_items.returned_qty', 'sale_items.price', 'sale_items.total']);
+            ->join('branches', 'branches.id', '=', 'sales.branch_id')->whereDate('sales.sale_date', $date)->orderBy('sales.id')
+            ->get(['branches.name as branch_name', 'sales.invoice_no', 'sales.customer_name', 'sale_items.medicine_name', 'sale_items.batch_no', 'sale_items.expiry_date', 'sale_items.quantity', 'sale_items.returned_qty', 'sale_items.price', 'sale_items.total']);
         $purchaseLines = DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
-            ->join('medicines', 'medicines.id', '=', 'purchase_items.medicine_id')->join('suppliers', 'suppliers.id', '=', 'purchases.supplier_id')
+            ->join('medicines', 'medicines.id', '=', 'purchase_items.medicine_id')->join('suppliers', 'suppliers.id', '=', 'purchases.supplier_id')->join('branches', 'branches.id', '=', 'purchases.branch_id')
             ->whereDate('purchases.purchase_date', $date)->orderBy('purchases.id')
-            ->get(['purchases.reference_no', 'suppliers.name as supplier_name', 'medicines.name as medicine_name', 'purchase_items.batch_no', 'purchase_items.expiry_date', 'purchase_items.quantity', 'purchase_items.bonus_qty', 'purchase_items.total']);
+            ->get(['branches.name as branch_name', 'purchases.reference_no', 'suppliers.name as supplier_name', 'medicines.name as medicine_name', 'purchase_items.batch_no', 'purchase_items.expiry_date', 'purchase_items.quantity', 'purchase_items.bonus_qty', 'purchase_items.total']);
         $topMedicines = SaleItem::join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereDate('sales.sale_date', $date)->groupBy('sale_items.medicine_name')
             ->selectRaw('sale_items.medicine_name, SUM(sale_items.quantity - sale_items.returned_qty) as quantity, SUM(sale_items.total) as sales_value')
             ->orderByDesc('quantity')->limit(10)->get();
-        $lowStock = Medicine::where('is_active', true)->whereColumn('total_stock', '<=', 'reorder_level')->orderBy('total_stock')->limit(30)->get(['name', 'strength', 'total_stock', 'reorder_level']);
+        $stockByBranch = DB::table('medicine_batches')->where(function ($q) use ($date) { $q->whereNull('expiry_date')->orWhere('expiry_date', '>=', $date); })->groupBy('medicine_id', 'branch_id')->selectRaw('medicine_id,branch_id,SUM(quantity) as stock');
+        $lowStock = DB::table('medicines as m')->crossJoin('branches as b')->leftJoinSub($stockByBranch, 'bs', fn ($j) => $j->on('bs.medicine_id', '=', 'm.id')->on('bs.branch_id', '=', 'b.id'))->where('m.is_active', true)->where('b.is_active', true)->whereRaw('COALESCE(bs.stock,0) <= m.reorder_level')->orderBy('bs.stock')->limit(30)->get(['m.name', 'm.strength', 'b.name as branch_name', DB::raw('COALESCE(bs.stock,0) as total_stock'), 'm.reorder_level']);
         $expiryDays = (int) setting('expiry_alert_days', 60);
         $expiring = DB::table('medicine_batches')->join('medicines', 'medicines.id', '=', 'medicine_batches.medicine_id')
-            ->where('medicine_batches.quantity', '>', 0)->whereBetween('medicine_batches.expiry_date', [$date, date('Y-m-d', strtotime($date . " +{$expiryDays} days"))])
+            ->join('branches', 'branches.id', '=', 'medicine_batches.branch_id')->where('medicine_batches.quantity', '>', 0)->whereBetween('medicine_batches.expiry_date', [$date, date('Y-m-d', strtotime($date . " +{$expiryDays} days"))])
             ->orderBy('medicine_batches.expiry_date')->limit(30)
-            ->get(['medicines.name', 'medicine_batches.batch_no', 'medicine_batches.expiry_date', 'medicine_batches.quantity']);
+            ->get(['medicines.name', 'branches.name as branch_name', 'medicine_batches.batch_no', 'medicine_batches.expiry_date', 'medicine_batches.quantity']);
         $salesTotal = (float) $sales->sum('total');
         $salesCost = (float) SaleItem::join('sales', 'sales.id', '=', 'sale_items.sale_id')->whereDate('sales.sale_date', $date)
             ->selectRaw('COALESCE(SUM(sale_items.cost_price * (sale_items.quantity - sale_items.returned_qty)),0) as cost')->value('cost');
@@ -95,15 +96,15 @@ class SendDailyStoreReport extends Command
             ['New customers added', $newCustomers], ['New medicines added', $newMedicines], ['Stock adjustments', $adjustments],
         ];
         $html .= '<table cellpadding="8" cellspacing="0" border="1" style="border-collapse:collapse;width:100%">' . collect($metrics)->map(fn ($m) => '<tr><th align="left">' . e($m[0]) . '</th><td>' . $m[1] . '</td></tr>')->implode('') . '</table><br>';
-        $html .= $table('Sales invoices', ['Invoice', 'Customer', 'Total', 'Paid', 'Due', 'Cashier'], $rows($sales, [['invoice_no'], ['customer_name'], ['total','money'], ['paid','money'], ['due','money'], ['user.name']]));
-        $html .= $table('Purchases', ['Reference', 'Supplier', 'Total', 'Paid', 'Due', 'Items'], $rows($purchases, [['reference_no'], ['supplier.name'], ['total','money'], ['paid','money'], ['due','money'], ['items_count']]));
-        $html .= $table('Sold medicine line items', ['Invoice', 'Customer', 'Medicine', 'Batch', 'Expiry', 'Qty', 'Returned', 'Unit price', 'Line total'], $rows($saleLines, [['invoice_no'], ['customer_name'], ['medicine_name'], ['batch_no'], ['expiry_date'], ['quantity'], ['returned_qty'], ['price', 'money'], ['total', 'money']]));
+        $html .= $table('Sales invoices', ['Invoice', 'Branch', 'Customer', 'Total', 'Paid', 'Due', 'Cashier'], $rows($sales, [['invoice_no'], ['branch.name'], ['customer_name'], ['total','money'], ['paid','money'], ['due','money'], ['user.name']]));
+        $html .= $table('Purchases', ['Reference', 'Branch', 'Supplier', 'Total', 'Paid', 'Due', 'Items'], $rows($purchases, [['reference_no'], ['branch.name'], ['supplier.name'], ['total','money'], ['paid','money'], ['due','money'], ['items_count']]));
+        $html .= $table('Sold medicine line items', ['Invoice', 'Branch', 'Customer', 'Medicine', 'Batch', 'Expiry', 'Qty', 'Returned', 'Unit price', 'Line total'], $rows($saleLines, [['invoice_no'], ['branch_name'], ['customer_name'], ['medicine_name'], ['batch_no'], ['expiry_date'], ['quantity'], ['returned_qty'], ['price', 'money'], ['total', 'money']]));
         $html .= $table('New customers added today', ['Customer', 'Phone', 'Address'], $rows($newCustomerRecords, [['name'], ['phone'], ['address']]));
         $html .= $table('New medicines added today', ['Medicine', 'Strength', 'Barcode', 'Pack size', 'Sale price'], $rows($newMedicineRecords, [['name'], ['strength'], ['barcode'], ['pack_size'], ['sale_price', 'money']]));
-        $html .= $table('Purchased medicine / stock received', ['Purchase', 'Supplier', 'Medicine', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Line total'], $rows($purchaseLines, [['reference_no'], ['supplier_name'], ['medicine_name'], ['batch_no'], ['expiry_date'], ['quantity'], ['bonus_qty'], ['total','money']]));
+        $html .= $table('Purchased medicine / stock received', ['Purchase', 'Branch', 'Supplier', 'Medicine', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Line total'], $rows($purchaseLines, [['reference_no'], ['branch_name'], ['supplier_name'], ['medicine_name'], ['batch_no'], ['expiry_date'], ['quantity'], ['bonus_qty'], ['total','money']]));
         $html .= $table('Top selling medicines', ['Medicine', 'Quantity sold', 'Sales value'], $rows($topMedicines, [['medicine_name'], ['quantity'], ['sales_value','money']]));
-        $html .= $table('Low stock medicines', ['Medicine', 'Stock', 'Reorder level'], $rows($lowStock, [['name'], ['total_stock'], ['reorder_level']]));
-        $html .= $table("Batches expiring within {$expiryDays} days", ['Medicine', 'Batch', 'Expiry', 'Remaining'], $rows($expiring, [['name'], ['batch_no'], ['expiry_date'], ['quantity']]));
+        $html .= $table('Low stock medicines by branch', ['Medicine', 'Branch', 'Stock', 'Reorder level'], $rows($lowStock, [['name'], ['branch_name'], ['total_stock'], ['reorder_level']]));
+        $html .= $table("Batches expiring within {$expiryDays} days", ['Medicine', 'Branch', 'Batch', 'Expiry', 'Remaining'], $rows($expiring, [['name'], ['branch_name'], ['batch_no'], ['expiry_date'], ['quantity']]));
         $html .= '<p style="color:#777;font-size:11px">Automatically generated by ' . e(config('app.name')) . '. Profit is an estimate based on sold item cost and discounts; operational/accounting adjustments may affect final profit.</p></div>';
 
         foreach ($recipients as $recipient) {

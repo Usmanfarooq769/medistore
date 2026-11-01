@@ -19,9 +19,9 @@
             </template>
         </nav>
 
-        <!-- <div class="sidebar-foot">
+        <div class="sidebar-foot">
             Press <kbd>F1</kbd> anytime to start a new sale
-        </div> -->
+        </div>
     </aside>
     <div v-if="sideOpen" class="sidebar-backdrop d-lg-none" @click="sideOpen = false"></div>
 
@@ -79,6 +79,7 @@
                     </div>
                 </div>
 
+                <select v-if="auth.isAdmin && branches.length > 1" v-model="activeBranchId" class="form-select form-select-sm" style="max-width:170px" title="Active branch" @change="switchBranch"><option v-for="b in branches" :key="b.id" :value="String(b.id)">{{b.name}}</option></select>
                 <router-link to="/pos" class="btn btn-success d-inline-flex align-items-center">
                     <i class="bi bi-cart-plus"></i><span class="d-none d-sm-inline ms-2">New sale</span>
                 </router-link>
@@ -124,6 +125,8 @@ const bellOpen = ref(false);
 const userOpen = ref(false);
 const bellEl = ref(null);
 const userEl = ref(null);
+const branches = ref([]);
+const activeBranchId = ref(localStorage.getItem('active_branch_id') || '1');
 const dark = ref(document.documentElement.getAttribute('data-bs-theme') === 'dark');
 const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -144,15 +147,18 @@ const menu = computed(() => {
         a && { section: 'Stock in' },
         a && { to: '/purchases/create', icon: 'bi-box-arrow-in-down', label: 'New Purchase' },
         a && { to: '/purchases', icon: 'bi-journal-text', label: 'Purchase List' },
+        a && { to: '/purchase-orders', icon: 'bi-clipboard-check', label: 'Purchase Orders' },
         a && { to: '/suppliers', icon: 'bi-truck', label: 'Suppliers' },
         a && { section: 'Inventory' },
         a && { to: '/medicines', icon: 'bi-capsule', label: 'Medicines' },
+        a && { to: '/barcode-labels', icon: 'bi-upc', label: 'Barcode Labels' },
         a && { to: '/categories', icon: 'bi-tags', label: 'Categories' },
         a && { to: '/manufacturers', icon: 'bi-building', label: 'Companies' },
         a && { to: '/adjustments', icon: 'bi-sliders', label: 'Stock Adjustment' },
         { section: 'Sales' },
         { to: '/sales', icon: 'bi-receipt', label: 'Sales / Invoices' },
         { to: '/customers', icon: 'bi-people', label: 'Customers' },
+        { to: '/prescriptions', icon: 'bi-file-medical', label: 'Prescriptions' },
         { section: 'Returns' },
         { to: '/returns/new', icon: 'bi-arrow-counterclockwise', label: 'New Customer Return' },
         { to: '/returns', icon: 'bi-arrow-return-left', label: 'Customer Returns' },
@@ -167,6 +173,8 @@ const menu = computed(() => {
         a && { section: 'System' },
         a && { to: '/users', icon: 'bi-person-gear', label: 'Users' },
         a && { to: '/audit-logs', icon: 'bi-shield-check', label: 'Audit Trail' },
+        a && { to: '/branches', icon: 'bi-diagram-3', label: 'Branches & Transfers' },
+        a && { to: '/finance', icon: 'bi-calculator', label: 'Finance & Accounting' },
         a && { to: '/settings', icon: 'bi-gear', label: 'Settings' },
     ].filter(Boolean);
 });
@@ -176,6 +184,11 @@ function toggleTheme() {
     const t = dark.value ? 'dark' : 'light';
     document.documentElement.setAttribute('data-bs-theme', t);
     localStorage.setItem('theme', t);
+}
+
+async function switchBranch() {
+    localStorage.setItem('active_branch_id', activeBranchId.value);
+    window.location.reload();
 }
 
 async function logout() {
@@ -198,6 +211,7 @@ const onClick = (e) => {
 const onVisible = () => { if (!document.hidden) alerts.load(); };
 
 onMounted(async () => {
+    if (auth.isAdmin) { try { const { data } = await (await import('../api')).default.get('/branches'); branches.value = data; if (!branches.value.some(b => String(b.id) === activeBranchId.value)) { activeBranchId.value = String(branches.value[0]?.id || 1); localStorage.setItem('active_branch_id', activeBranchId.value); } } catch (e) {} }
     await alerts.load();
     timer = setInterval(alerts.load, 120000);
     window.addEventListener('stock-changed', onStock);

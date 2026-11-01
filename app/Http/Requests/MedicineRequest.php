@@ -30,6 +30,7 @@ class MedicineRequest extends FormRequest
             'reorder_level'   => 'required|integer|min:0',
             'rack'            => 'nullable|string|max:50',
             'is_active'       => 'boolean',
+            'requires_prescription' => 'boolean',
         ];
     }
 

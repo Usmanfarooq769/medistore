@@ -9,6 +9,9 @@ class MedicineResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $attributes = $this->resource->getAttributes();
+        $stock = array_key_exists('branch_stock', $attributes) ? (int) ($this->branch_stock ?? 0) : (int) $this->total_stock;
+        $sellable = array_key_exists('sellable_stock', $attributes) ? (int) ($this->sellable_stock ?? 0) : $stock;
         return [
             'id'              => $this->id,
             'name'            => $this->name,
@@ -28,11 +31,12 @@ class MedicineResource extends JsonResource
             'sale_price'      => (float) $this->sale_price,
             'reorder_level'   => (int) $this->reorder_level,
             'rack'            => $this->rack,
-            'total_stock'     => (int) $this->total_stock,
-            'is_low'          => (int) $this->total_stock <= (int) $this->reorder_level,
+            'total_stock'     => $stock,
+            'is_low'          => $sellable <= (int) $this->reorder_level,
             'is_active'       => (bool) $this->is_active,
+            'requires_prescription' => (bool) ($this->requires_prescription ?? false),
             // optional aggregates
-            'sellable_stock'  => $this->when(isset($this->sellable_stock), fn () => (int) $this->sellable_stock),
+            'sellable_stock'  => array_key_exists('sellable_stock', $attributes) ? (int) ($this->sellable_stock ?? 0) : null,
             'nearest_expiry'  => $this->when(isset($this->nearest_expiry), fn () => $this->nearest_expiry),
             'cost_value'      => $this->when(isset($this->cost_value), fn () => (float) $this->cost_value),
             'sale_value'      => $this->when(isset($this->sale_value), fn () => (float) $this->sale_value),

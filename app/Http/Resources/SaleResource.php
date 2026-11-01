@@ -22,6 +22,7 @@ class SaleResource extends JsonResource
             'tax'             => (float) $this->tax,
             'total'           => (float) $this->total,
             'paid'            => (float) $this->paid,
+            'initial_paid'    => (float) $this->initial_paid,
             'due'             => (float) $this->due,
             'change_amount'   => (float) $this->change_amount,
             'returned_amount' => (float) $this->returned_amount,

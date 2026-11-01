@@ -9,6 +9,10 @@ use App\Http\Resources\SaleResource;
 use App\Models\Customer;
 use App\Models\Medicine;
 use App\Models\Sale;
+use App\Models\Prescription;
+use App\Models\TaxProfile;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use App\Services\StockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +55,23 @@ class PosController extends Controller
         $data = $request->validated();
         $user = $request->user();
         $allowPriceEdit = $user->isAdmin() || setting('cashier_price_edit', '0') === '1';
+        $medicineIds = collect($data['items'])->pluck('id')->unique();
+        $restrictedIds = Medicine::whereIn('id', $medicineIds)->where('requires_prescription', true)->pluck('id');
+        $prescription = null;
+        if ($restrictedIds->isNotEmpty()) {
+            if (empty($data['prescription_id'])) throw ValidationException::withMessages(['prescription_id' => 'An approved prescription is required for one or more medicines in this sale.']);
+            $prescription = Prescription::with('items')->whereKey($data['prescription_id'])->where('status', 'approved')->first();
+            if (!$prescription) throw ValidationException::withMessages(['prescription_id' => 'Selected prescription is not approved or is unavailable.']);
+            $covered = $prescription->items->pluck('medicine_id')->filter()->map(fn($id)=>(int)$id);
+            if ($restrictedIds->diff($covered)->isNotEmpty()) throw ValidationException::withMessages(['prescription_id' => 'The selected prescription does not include every restricted medicine in this cart.']);
+            if ($prescription->customer_id && (int) ($data['customer_id'] ?? 0) !== (int) $prescription->customer_id) throw ValidationException::withMessages(['prescription_id' => 'Select the customer linked to this prescription before checkout.']);
+            foreach ($restrictedIds as $restrictedId) {
+                $medicine = Medicine::find($restrictedId); $prescribedQty = (float) $prescription->items->where('medicine_id', $restrictedId)->sum('quantity');
+                $requestedQty = collect($data['items'])->where('id', $restrictedId)->sum(fn($row) => (float)$row['quantity'] * (($row['sale_unit'] ?? 'pack') === 'pack' ? max(1,(int)$medicine->pack_size) : 1));
+                if ($prescribedQty > 0 && $requestedQty > $prescribedQty) throw ValidationException::withMessages(['prescription_id' => "Sale quantity for {$medicine->name} exceeds the prescribed individual-unit quantity ({$prescribedQty})."]);
+            }
+        }
+        $taxProfile = !empty($data['tax_profile_id']) ? TaxProfile::where('is_active', true)->findOrFail($data['tax_profile_id']) : null;
 
         $lines = collect($data['items'])->groupBy(fn ($row) => $row['id'].'|'.($row['sale_unit'] ?? 'pack'))->map(fn ($g) => [
             'id' => (int) $g->first()['id'],
@@ -59,10 +80,11 @@ class PosController extends Controller
             'price' => $g->first()['price'] ?? null,
         ]);
 
-        $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user) {
-            $session = \App\Models\CashierSession::where('user_id', $user->id)->whereNull('closed_at')->latest('id')->first();
+        $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user, $prescription, $taxProfile) {
+            if ($prescription) { $prescription = Prescription::with('items')->lockForUpdate()->findOrFail($prescription->id); if ($prescription->status !== 'approved') throw ValidationException::withMessages(['prescription_id' => 'Prescription has already been dispensed or is no longer approved.']); }
+            $session = \App\Models\CashierSession::where('branch_id', BranchContext::id())->where('user_id', $user->id)->whereNull('closed_at')->latest('id')->first();
             if ($user->role === 'cashier' && ! $session) throw ValidationException::withMessages(['cashier_session' => 'Open your cashier shift before taking sales.']);
-            $sale = Sale::create(['sale_date' => today(), 'user_id' => $user->id, 'cashier_session_id' => $session?->id, 'payment_method' => $data['payment_method']]);
+            $sale = Sale::create(['sale_date' => today(), 'user_id' => $user->id, 'branch_id' => BranchContext::id(), 'cashier_session_id' => $session?->id, 'payment_method' => $data['payment_method'], 'prescription_id' => $prescription?->id, 'tax_profile_id' => $taxProfile?->id]);
             $invoice = 'INV-' . now()->format('Ymd') . '-' . str_pad($sale->id, 5, '0', STR_PAD_LEFT);
             $subtotal = 0;
 
@@ -100,9 +122,15 @@ class PosController extends Controller
                 throw ValidationException::withMessages(['discount' => "Maximum allowed discount is {$maxDisc}%."]);
             }
 
-            $taxPercent = (float) ($data['tax_percent'] ?? 0);
-            $tax   = round(($subtotal - $discount) * $taxPercent / 100, 2);
-            $total = round($subtotal - $discount + $tax, 2);
+            $taxPercent = $taxProfile ? (float) $taxProfile->rate : (float) ($data['tax_percent'] ?? 0);
+            $taxable = $subtotal - $discount;
+            if ($taxProfile && $taxProfile->calculation === 'inclusive') {
+                $tax = $taxPercent > 0 ? round($taxable - ($taxable / (1 + ($taxPercent / 100))), 2) : 0;
+                $total = round($taxable, 2);
+            } else {
+                $tax = round($taxable * $taxPercent / 100, 2);
+                $total = round($taxable + $tax, 2);
+            }
             $paid  = (float) $data['paid'];
             $due   = max($total - $paid, 0);
 
@@ -127,15 +155,20 @@ class PosController extends Controller
                 'tax'            => $tax,
                 'total'          => $total,
                 'paid'           => min($paid, $total),
+                'initial_paid'   => min($paid, $total),
                 'due'            => $due,
                 'change_amount'  => max($paid - $total, 0),
                 'payment_status' => payment_status($total, min($paid, $total)),
                 'note'           => $data['note'] ?? null,
+                'prescription_id' => $prescription?->id,
+                'tax_profile_id' => $taxProfile?->id,
             ]);
 
             if ($due > 0) {
                 $customer->increment('balance', $due);
             }
+            if ($prescription) $prescription->update(['status' => 'dispensed']);
+            app(JournalPostingService::class)->postSale($sale->load('items'));
 
             return $sale;
         });
@@ -145,7 +178,7 @@ class PosController extends Controller
         return response()->json([
             'message'   => 'Sale completed.',
             'data'      => new SaleResource($sale),
-            'low_stock' => Medicine::whereIn('id', $lines->pluck('id'))->lowStock()->get(['id', 'name', 'strength', 'total_stock']),
+            'low_stock' => Medicine::whereIn('id', $lines->pluck('id'))->withSellableStock()->withSum(['batches as branch_stock' => fn($b) => $b->where('branch_id', BranchContext::id())], 'quantity')->lowStock()->get(['id', 'name', 'strength', 'total_stock', 'branch_stock', 'sellable_stock'])->map(function($m){$m->total_stock=(int)$m->branch_stock;return $m;}),
         ], 201);
     }
 }

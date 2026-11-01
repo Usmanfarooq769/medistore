@@ -7,6 +7,8 @@ use App\Http\Resources\SaleResource;
 use App\Models\Customer;
 use App\Models\Sale;
 use App\Services\StockService;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -16,7 +18,7 @@ class SaleController extends Controller
 
     public function index(Request $request)
     {
-        $query = Sale::query()
+        $query = Sale::query()->where('branch_id', BranchContext::id())
             ->when($request->search, fn ($q, $s) => $q->where(fn ($w) => $w->where('invoice_no', 'like', "%{$s}%")
                 ->orWhere('customer_name', 'like', "%{$s}%")->orWhere('customer_phone', 'like', "{$s}%")))
             ->when($request->from, fn ($q, $d) => $q->where('sale_date', '>=', $d))
@@ -32,6 +34,7 @@ class SaleController extends Controller
 
     public function show(Sale $sale)
     {
+        abort_unless((int)$sale->branch_id === BranchContext::id(), 404);
         return new SaleResource($sale->load(['items', 'user:id,name', 'returns']));
     }
 
@@ -39,7 +42,7 @@ class SaleController extends Controller
     public function findByInvoice(Request $request)
     {
         $request->validate(['invoice_no' => 'required|string|max:40']);
-        $sale = Sale::with('items')->where('invoice_no', trim($request->invoice_no))->first();
+        $sale = Sale::with('items')->where('branch_id', BranchContext::id())->where('invoice_no', trim($request->invoice_no))->first();
 
         abort_unless($sale, 404, 'Invoice not found.');
 
@@ -53,7 +56,10 @@ class SaleController extends Controller
     /** Void full sale (admin) – remaining stock back, due reversed */
     public function destroy(Sale $sale)
     {
+        abort_unless((int)$sale->branch_id === BranchContext::id(), 404);
+        abort_if((float)$sale->paid > 0 || (float)$sale->returned_amount > 0, 422, 'This invoice has received payments or returns. Process a return/refund instead of voiding it.');
         DB::transaction(function () use ($sale) {
+            app(JournalPostingService::class)->reverseSource(Sale::class, $sale->id, (int) $sale->branch_id, 'Sale voided ' . $sale->invoice_no);
             foreach ($sale->items as $item) {
                 $qty = $item->quantity - $item->returned_qty;
                 if ($qty > 0 && $item->medicine_id) {

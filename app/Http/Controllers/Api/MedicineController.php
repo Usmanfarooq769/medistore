@@ -9,6 +9,7 @@ use App\Http\Resources\MedicineResource;
 use App\Http\Resources\StockMovementResource;
 use App\Models\Medicine;
 use App\Models\StockMovement;
+use App\Services\BranchContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -23,21 +24,23 @@ class MedicineController extends Controller
         $q = Medicine::query()
             ->with(['category:id,name', 'manufacturer:id,name'])
             ->withExists('movements as has_stock_history')
-            ->withMin(['batches as nearest_expiry' => fn ($b) => $b->where('quantity', '>', 0)], 'expiry_date')
+            ->withSellableStock()
+            ->withSum(['batches as branch_stock' => fn ($b) => $b->where('branch_id', BranchContext::id())], 'quantity')
+            ->withMin(['batches as nearest_expiry' => fn ($b) => $b->where('branch_id', BranchContext::id())->where('quantity', '>', 0)], 'expiry_date')
             ->search($request->search)
             ->when($request->category_id, fn ($q, $v) => $q->where('category_id', $v))
             ->when($request->manufacturer_id, fn ($q, $v) => $q->where('manufacturer_id', $v))
             ->when($request->status, function ($q, $status) use ($days) {
                 match ($status) {
                     'low'      => $q->lowStock(),
-                    'out'      => $q->where('total_stock', '<=', 0),
-                    'expiring' => $q->whereHas('batches', fn ($b) => $b->where('quantity', '>', 0)->whereBetween('expiry_date', [today(), today()->addDays($days)])),
-                    'expired'  => $q->whereHas('batches', fn ($b) => $b->where('quantity', '>', 0)->where('expiry_date', '<', today())),
+                    'out'      => $q->whereRaw('(SELECT COALESCE(SUM(mb.quantity),0) FROM medicine_batches mb WHERE mb.medicine_id = medicines.id AND mb.branch_id = ? AND (mb.expiry_date IS NULL OR mb.expiry_date >= ?)) <= 0', [BranchContext::id(), today()->toDateString()]),
+                    'expiring' => $q->whereHas('batches', fn ($b) => $b->where('branch_id', BranchContext::id())->where('quantity', '>', 0)->whereBetween('expiry_date', [today(), today()->addDays($days)])),
+                    'expired'  => $q->whereHas('batches', fn ($b) => $b->where('branch_id', BranchContext::id())->where('quantity', '>', 0)->where('expiry_date', '<', today())),
                     'inactive' => $q->where('is_active', false),
                     default    => null,
                 };
             })
-            ->orderBy($sort, $request->dir === 'desc' ? 'desc' : 'asc');
+            ->orderBy($sort === 'total_stock' ? 'branch_stock' : $sort, $request->dir === 'desc' ? 'desc' : 'asc');
 
         return MedicineResource::collection($q->paginate($request->integer('per_page', 15)));
     }
@@ -45,11 +48,9 @@ class MedicineController extends Controller
     /** Autocomplete (purchase form, returns, adjustments). ?sellable=1 => non-expired stock only */
     public function search(Request $request)
     {
-        $q = Medicine::query()->where('is_active', true)->search($request->q)->orderBy('name')->limit(20);
+        $q = Medicine::query()->where('is_active', true)->withSellableStock()->withSum(['batches as branch_stock' => fn($b) => $b->where('branch_id', BranchContext::id())], 'quantity')->search($request->q)->orderBy('name')->limit(20);
 
-        if ($request->boolean('sellable')) {
-            $q->sellable()->withSellableStock();
-        }
+        if ($request->boolean('sellable')) $q->sellable();
 
         return MedicineResource::collection($q->get());
     }
@@ -60,7 +61,7 @@ class MedicineController extends Controller
     {
         $headers = [
             'name', 'generic_name', 'strength', 'category', 'manufacturer', 'barcode',
-            'unit', 'pack_size', 'purchase_price', 'sale_price', 'reorder_level', 'rack',
+            'unit', 'pack_size', 'purchase_price', 'sale_price', 'reorder_level', 'rack', 'requires_prescription',
         ];
 
         return response()->streamDownload(function () use ($headers) {
@@ -137,6 +138,7 @@ class MedicineController extends Controller
                     'reorder_level' => max(0, (int) ($row['reorder_level'] ?? 10)),
                     'rack' => ! empty($row['rack']) ? mb_substr($row['rack'], 0, 50) : null,
                     'is_active' => true,
+                    'requires_prescription' => in_array(strtolower((string)($row['requires_prescription'] ?? '0')), ['1','yes','true'], true),
                     'stock_units_are_base' => true,
                 ];
                 if ($medicine) {
@@ -147,7 +149,7 @@ class MedicineController extends Controller
                     // Blank/missing CSV columns must never erase existing master data.
                     foreach (['generic_name' => 'generic_name', 'strength' => 'strength', 'category_id' => 'category',
                         'manufacturer_id' => 'manufacturer', 'barcode' => 'barcode', 'rack' => 'rack',
-                        'unit' => 'unit', 'pack_size' => 'pack_size', 'reorder_level' => 'reorder_level'] as $field => $source) {
+                        'unit' => 'unit', 'pack_size' => 'pack_size', 'reorder_level' => 'reorder_level', 'requires_prescription' => 'requires_prescription'] as $field => $source) {
                         if (! isset($row[$source]) || $row[$source] === '') unset($payload[$field]);
                     }
                     if (! is_numeric($row['purchase_price'] ?? null)) unset($payload['purchase_price']);
@@ -219,6 +221,7 @@ class MedicineController extends Controller
                 'subject_type' => Medicine::class, 'subject_id' => $medicine->id,
                 'old_values' => ['pack_size' => $currentPackSize, 'total_stock' => $oldStock],
                 'new_values' => ['pack_size' => $factor, 'total_stock' => $medicine->total_stock], 'ip_address' => $request->ip()]);
+            \App\Services\StockService::flushCache(\App\Models\Branch::pluck('id')->all());
             $message = $needsConversion && $data['legacy_stock_unit'] === 'pack' ? "Legacy stock and linked history converted: {$oldStock} packs = ".($oldStock * $factor).' individual units.' : ($needsConversion ? 'Existing stock was already in individual units. Pack metadata and selling prices were configured without changing quantities.' : 'Pack size configured. Future purchases will be converted into individual units.');
             return response()->json(['message' => $message, 'data' => new MedicineResource($medicine->fresh())]);
         });
@@ -226,7 +229,7 @@ class MedicineController extends Controller
 
     public function show(Medicine $medicine)
     {
-        return new MedicineResource($medicine->load(['category:id,name', 'manufacturer:id,name']));
+        return new MedicineResource($medicine->load(['category:id,name', 'manufacturer:id,name'])->loadSum(['batches as branch_stock' => fn($b) => $b->where('branch_id', BranchContext::id())], 'quantity')->loadSum(['batches as sellable_stock' => fn($b) => $b->where('branch_id', BranchContext::id())->where('quantity','>',0)->where(fn($q)=>$q->whereNull('expiry_date')->orWhere('expiry_date','>=',today()))], 'quantity'));
     }
 
     public function store(MedicineRequest $request)
@@ -268,7 +271,7 @@ class MedicineController extends Controller
      */
     public function batches(Request $request, Medicine $medicine)
     {
-        $q = $medicine->batches()->with('supplier:id,name')
+        $q = $medicine->batches()->where('branch_id', BranchContext::id())->with('supplier:id,name')
             ->when(! $request->boolean('all'), fn ($b) => $b->where('quantity', '>', 0))
             ->when($request->supplier_id, fn ($b, $s) => $b->orderByRaw('supplier_id = ? DESC', [$s]))
             ->orderByRaw('expiry_date IS NULL, expiry_date');
@@ -279,6 +282,6 @@ class MedicineController extends Controller
     /** Stock card ledger */
     public function movements(Medicine $medicine)
     {
-        return StockMovementResource::collection(StockMovement::where('medicine_id', $medicine->id)->latest('id')->paginate(20));
+        return StockMovementResource::collection(StockMovement::where('medicine_id', $medicine->id)->where('branch_id', BranchContext::id())->latest('id')->paginate(20));
     }
 }

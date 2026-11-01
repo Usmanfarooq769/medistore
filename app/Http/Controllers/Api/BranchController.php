@@ -1,0 +1,4 @@
+<?php
+namespace App\Http\Controllers\Api;
+use App\Http\Controllers\Controller; use App\Models\Branch; use Illuminate\Http\Request;
+class BranchController extends Controller { public function index(){return Branch::where('is_active',true)->orderBy('name')->get();} public function store(Request $r){$d=$r->validate(['name'=>'required|string|max:120','code'=>'required|string|max:30|unique:branches,code','phone'=>'nullable|string|max:40','address'=>'nullable|string|max:255']);return response()->json(['data'=>Branch::create($d+['is_active'=>true])],201);} public function update(Request $r,Branch $branch){$d=$r->validate(['name'=>'sometimes|required|string|max:120','code'=>'sometimes|required|string|max:30|unique:branches,code,'.$branch->id,'phone'=>'nullable|string|max:40','address'=>'nullable|string|max:255','is_active'=>'sometimes|boolean']);$branch->update($d);return response()->json(['data'=>$branch]);} }

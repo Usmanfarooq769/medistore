@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class MedicineBatch extends Model
 {
     protected $fillable = [
-        'medicine_id', 'purchase_id', 'supplier_id', 'batch_no', 'expiry_date',
+        'medicine_id', 'purchase_id', 'supplier_id', 'branch_id', 'batch_no', 'expiry_date',
         'purchase_price', 'sale_price', 'initial_quantity', 'quantity',
     ];
 

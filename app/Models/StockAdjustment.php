@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class StockAdjustment extends Model
 {
-    protected $fillable = ['medicine_id', 'medicine_batch_id', 'type', 'quantity', 'reason', 'note', 'user_id'];
+    protected $fillable = ['medicine_id', 'medicine_batch_id', 'type', 'quantity', 'reason', 'note', 'user_id', 'branch_id'];
 
     public function medicine()
     {

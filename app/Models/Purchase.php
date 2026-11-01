@@ -8,7 +8,7 @@ class Purchase extends Model
 {
     protected $fillable = [
         'reference_no', 'supplier_id', 'supplier_invoice_no', 'purchase_date', 'subtotal', 'discount',
-        'tax', 'total', 'paid', 'due', 'payment_status', 'note', 'user_id',
+        'tax', 'total', 'paid', 'due', 'payment_status', 'note', 'user_id', 'branch_id',
     ];
 
     protected $casts = [
@@ -31,4 +31,6 @@ class Purchase extends Model
     {
         return $this->belongsTo(User::class);
     }
+    public function branch() { return $this->belongsTo(Branch::class); }
+
 }

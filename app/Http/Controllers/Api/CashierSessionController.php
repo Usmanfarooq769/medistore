@@ -11,12 +11,13 @@ use App\Models\PurchaseReturn;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use App\Services\BranchContext;
 
 class CashierSessionController extends Controller
 {
     public function current(Request $request)
     {
-        $session = CashierSession::where('user_id', $request->user()->id)->whereNull('closed_at')->latest('id')->first();
+        $session = CashierSession::where('branch_id', BranchContext::id())->where('user_id', $request->user()->id)->whereNull('closed_at')->latest('id')->first();
         return response()->json(['data' => $session ? $this->summary($session) : null]);
     }
 
@@ -24,10 +25,10 @@ class CashierSessionController extends Controller
     {
         $data = $request->validate(['opening_cash' => 'required|numeric|min:0|max:999999999', 'note' => 'nullable|string|max:500']);
         $session = DB::transaction(function () use ($request, $data) {
-            if (CashierSession::where('user_id', $request->user()->id)->whereNull('closed_at')->lockForUpdate()->exists()) {
+            if (CashierSession::where('branch_id', BranchContext::id())->where('user_id', $request->user()->id)->whereNull('closed_at')->lockForUpdate()->exists()) {
                 throw ValidationException::withMessages(['session' => 'You already have an open cashier shift.']);
             }
-            $session = CashierSession::create(['user_id' => $request->user()->id, 'opened_at' => now(), 'opening_cash' => $data['opening_cash'], 'closing_note' => $data['note'] ?? null]);
+            $session = CashierSession::create(['user_id' => $request->user()->id, 'opened_at' => now(), 'opening_cash' => $data['opening_cash'], 'branch_id' => BranchContext::id(), 'closing_note' => $data['note'] ?? null]);
             AuditLog::create(['user_id' => $request->user()->id, 'action' => 'cashier_shift_opened', 'subject_type' => CashierSession::class, 'subject_id' => $session->id, 'new_values' => ['opening_cash' => $data['opening_cash']], 'ip_address' => $request->ip()]);
             return $session;
         });
@@ -37,7 +38,7 @@ class CashierSessionController extends Controller
     public function transaction(Request $request)
     {
         $data = $request->validate(['type' => 'required|in:in,out', 'category' => 'required|string|max:60', 'amount' => 'required|numeric|gt:0|max:999999999', 'note' => 'nullable|string|max:255']);
-        $session = CashierSession::where('user_id', $request->user()->id)->whereNull('closed_at')->firstOrFail();
+        $session = CashierSession::where('branch_id', BranchContext::id())->where('user_id', $request->user()->id)->whereNull('closed_at')->firstOrFail();
         $row = $session->transactions()->create($data + ['user_id' => $request->user()->id]);
         return response()->json(['message' => 'Cash movement recorded.', 'data' => $row], 201);
     }
@@ -46,7 +47,7 @@ class CashierSessionController extends Controller
     {
         $data = $request->validate(['counted_cash' => 'required|numeric|min:0|max:999999999', 'closing_note' => 'nullable|string|max:1000']);
         $session = DB::transaction(function () use ($request, $data) {
-            $session = CashierSession::where('user_id', $request->user()->id)->whereNull('closed_at')->lockForUpdate()->latest('id')->firstOrFail();
+            $session = CashierSession::where('branch_id', BranchContext::id())->where('user_id', $request->user()->id)->whereNull('closed_at')->lockForUpdate()->latest('id')->firstOrFail();
             $totals = $this->totals($session);
             $expected = $totals['expected_cash'];
             $session->update(['closed_at' => now(), 'expected_cash' => $expected, 'counted_cash' => $data['counted_cash'], 'difference' => round((float) $data['counted_cash'] - $expected, 2), 'closing_note' => $data['closing_note'] ?? null]);
@@ -64,16 +65,16 @@ class CashierSessionController extends Controller
     private function totals(CashierSession $session): array
     {
         $sales = $session->sales()->get(['id','payment_method','paid','change_amount','total','due']);
-        $cashSales = (float) $sales->where('payment_method', 'cash')->sum('paid');
-        $nonCashSales = (float) $sales->whereIn('payment_method', ['card','online'])->sum('paid');
+        $cashSales = (float) $sales->where('payment_method', 'cash')->sum('initial_paid');
+        $nonCashSales = (float) $sales->whereIn('payment_method', ['card','online'])->sum('initial_paid');
         $creditSales = (float) $sales->where('payment_method', 'credit')->sum('total');
         $cashIn = (float) $session->transactions()->where('type', 'in')->sum('amount');
         $cashOut = (float) $session->transactions()->where('type', 'out')->sum('amount');
         $period = [$session->opened_at, $session->closed_at ?? now()];
-        $customerReceipts = (float) Payment::where('party_type', 'customer')->where('method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('amount');
-        $supplierPayments = (float) Payment::where('party_type', 'supplier')->where('method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('amount');
-        $cashRefunds = (float) SaleReturn::where('refund_method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('refund_amount');
-        $supplierCashBack = (float) PurchaseReturn::where('refund_type', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('total');
+        $customerReceipts = (float) Payment::where('branch_id', $session->branch_id)->where('party_type', 'customer')->where('method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('amount');
+        $supplierPayments = (float) Payment::where('branch_id', $session->branch_id)->where('party_type', 'supplier')->where('method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('amount');
+        $cashRefunds = (float) SaleReturn::where('branch_id', $session->branch_id)->where('refund_method', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('refund_amount');
+        $supplierCashBack = (float) PurchaseReturn::where('branch_id', $session->branch_id)->where('refund_type', 'cash')->where('user_id', $session->user_id)->whereBetween('created_at', $period)->sum('total');
         $opening = (float) $session->opening_cash;
         $expected = round($opening + $cashSales + $cashIn + $customerReceipts + $supplierCashBack - $cashOut - $supplierPayments - $cashRefunds, 2);
         return ['invoice_count' => $sales->count(), 'cash_sales' => $cashSales, 'non_cash_sales' => $nonCashSales, 'credit_sales' => $creditSales,

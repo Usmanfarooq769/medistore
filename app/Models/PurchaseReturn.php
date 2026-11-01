@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseReturn extends Model
 {
-    protected $fillable = ['return_no', 'supplier_id', 'return_date', 'total', 'refund_type', 'reason', 'user_id'];
+    protected $fillable = ['return_no', 'supplier_id', 'return_date', 'total', 'refund_type', 'reason', 'user_id', 'branch_id'];
 
     protected $casts = ['return_date' => 'date', 'total' => 'decimal:2'];
 

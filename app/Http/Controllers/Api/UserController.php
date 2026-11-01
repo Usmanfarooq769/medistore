@@ -25,7 +25,9 @@ class UserController extends Controller
             'email'    => 'required|email|max:150|unique:users,email',
             'password' => 'required|string|min:6',
             'role'     => ['required', Rule::in(['admin', 'cashier'])],
+            'branch_id' => 'nullable|exists:branches,id',
         ]);
+        $data['branch_id'] = $data['branch_id'] ?? 1;
         $user = User::create($data + ['is_active' => true]);
 
         return response()->json(['message' => 'User created.', 'data' => new UserResource($user)], 201);
@@ -39,6 +41,7 @@ class UserController extends Controller
             'password'  => 'nullable|string|min:6',
             'role'      => ['required', Rule::in(['admin', 'cashier'])],
             'is_active' => 'boolean',
+            'branch_id' => 'nullable|exists:branches,id',
         ]);
         if (empty($data['password'])) {
             unset($data['password']);

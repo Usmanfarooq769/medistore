@@ -16,6 +16,7 @@ class UserResource extends JsonResource
             'role'       => $this->role,
             'is_admin'   => $this->role === 'admin',
             'is_active'  => (bool) $this->is_active,
+            'branch_id'  => $this->branch_id,
             'created_at' => $this->created_at?->toDateTimeString(),
         ];
     }

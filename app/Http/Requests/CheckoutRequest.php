@@ -20,6 +20,8 @@ class CheckoutRequest extends FormRequest
             'items.*.sale_unit' => 'nullable|in:pack,unit',
             'items.*.price'    => 'nullable|numeric|min:0',
             'customer_id'      => 'nullable|exists:customers,id',
+            'prescription_id'  => 'nullable|exists:prescriptions,id',
+            'tax_profile_id'   => 'nullable|exists:tax_profiles,id',
             'customer_name'    => 'nullable|string|max:150',
             'customer_phone'   => 'nullable|string|max:30',
             'discount'         => 'nullable|numeric|min:0',

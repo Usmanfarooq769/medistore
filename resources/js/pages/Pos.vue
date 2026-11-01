@@ -8,7 +8,9 @@
                         <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
                         <input ref="searchEl" v-model="q" class="form-control" placeholder="Search name / generic or scan barcode (F2)" autocomplete="off" @keydown="onSearchKey">
                         <button v-if="q" class="btn btn-outline-secondary" @click="q = ''"><i class="bi bi-x-lg"></i></button>
+                        <button class="btn btn-outline-success" type="button" title="Scan with camera" @click="cameraOpen = !cameraOpen"><i class="bi bi-camera"></i></button>
                     </div>
+                    <BarcodeScanner v-if="cameraOpen" class="mb-2" @detected="onCameraBarcode" @close="cameraOpen = false" />
                     <div class="chips">
                         <button class="chip" :class="{ active: !category }" @click="category = ''">All</button>
                         <button v-for="c in categories" :key="c.id" class="chip" :class="{ active: category === c.id }" @click="category = c.id">{{ c.name }}</button>
@@ -30,6 +32,11 @@
                         </div>
                         <div class="small text-muted" style="font-size:.7rem"><span v-if="m.rack"><i class="bi bi-geo-alt"></i> {{ m.rack }} · </span>Exp {{ date(m.nearest_expiry) }}</div>
                     </div>
+                </div>
+                <div class="card-footer small text-muted d-flex flex-wrap gap-3 align-items-center">
+                    <span><kbd>F2</kbd> search</span><span><kbd>↑↓←→</kbd> select</span><span><kbd>Enter</kbd> add</span>
+                    <span><kbd>F4</kbd> hold</span><span><kbd>F8</kbd> clear</span><span><kbd>F9</kbd> pay</span>
+                    <button v-if="hasMore" class="btn btn-sm btn-light ms-auto" @click="loadProducts(false)">Load more</button>
                 </div>
             </div>
         </div>
@@ -95,8 +102,9 @@
                         </div>
                     </div>
                     <div class="d-flex justify-content-between align-items-center gap-2 mt-1">
-                        <span class="small">Tax %</span>
-                        <input v-model.number="taxPercent" type="number" min="0" max="100" step="0.01" class="form-control form-control-sm text-end" style="max-width:170px">
+                        <span class="small">Tax</span>
+                        <select v-if="taxProfiles.length" v-model.number="taxProfileId" class="form-select form-select-sm" style="max-width:170px" @change="applyTaxProfile"><option :value="null">Manual ({{taxPercent}}%)</option><option v-for="t in taxProfiles" :key="t.id" :value="t.id">{{t.name}} ({{t.rate}}%)</option></select>
+                        <input v-else v-model.number="taxPercent" type="number" min="0" max="100" step="0.01" class="form-control form-control-sm text-end" style="max-width:170px">
                     </div>
                     <div class="d-flex justify-content-between fs-3 fw-bold text-success border-top mt-2 pt-1"><span>Total</span><span>{{ money(totals.total) }}</span></div>
                     <div class="btn-group w-100 my-2">
@@ -129,6 +137,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 import api, { isCancel } from '../api';
 import Autocomplete from '../components/Autocomplete.vue';
+import BarcodeScanner from '../components/BarcodeScanner.vue';
 import { useAuth } from '../stores/auth';
 import { date, debounce, getCurrency, money, stockChanged } from '../utils/format';
 import { confirm, esc, Swal, toast } from '../utils/swal';
@@ -150,6 +159,7 @@ const hasMore = ref(false);
 const loading = ref(false);
 const active = ref(0);
 const searchEl = ref(null);
+const cameraOpen = ref(false);
 const gridEl = ref(null);
 
 const cart = ref(JSON.parse(localStorage.getItem('pos_cart') || '[]'));
@@ -159,6 +169,9 @@ const customer = ref(null);
 const discount = ref('');
 const discPct = ref(false);
 const taxPercent = ref(Number(auth.settings.default_tax || 0));
+const taxProfiles = ref([]);
+const taxProfileId = ref(null);
+function applyTaxProfile(){ const selected=taxProfiles.value.find(x=>x.id===taxProfileId.value); if(selected) taxPercent.value=Number(selected.rate); }
 const method = ref('cash');
 const paid = ref('');
 const busy = ref(false);
@@ -191,6 +204,13 @@ watch(category, () => loadProducts());
 
 const inCart = computed(() => Object.fromEntries(cart.value.map((c) => [c.id, c.qty])));
 
+async function onCameraBarcode(barcode) {
+    cameraOpen.value = false;
+    q.value = barcode;
+    try { const { data } = await api.get(`/pos/scan/${encodeURIComponent(barcode)}`, { silent: true }); add(data.data || data); q.value = ''; }
+    catch (e) { Swal.fire({ icon: 'warning', title: 'Barcode unavailable', text: e.response?.data?.message || 'Medicine not found.' }); }
+}
+
 function add(m) {
     const packSize = Math.max(1, Number(m.pack_size || 1));
     const line = cart.value.find((c) => c.id === m.id && c.sale_unit === 'pack');
@@ -199,7 +219,7 @@ function add(m) {
         line.qty++;
         line.stock = m.sellable_stock;
     } else {
-        cart.value.push({ id: m.id, name: m.display_name, price: Number(m.sale_price), packPrice: Number(m.sale_price), stock: Number(m.sellable_stock), packSize, unit: m.unit, sale_unit: 'pack', qty: 1 });
+        cart.value.push({ id: m.id, name: m.display_name, price: Number(m.sale_price), packPrice: Number(m.sale_price), stock: Number(m.sellable_stock), packSize, unit: m.unit, sale_unit: 'pack', qty: 1, requiresPrescription: !!m.requires_prescription });
     }
     toast.fire({ icon: 'success', title: `${m.display_name} added`, timer: 700 });
 }
@@ -258,8 +278,11 @@ const totals = computed(() => {
     const dv = Number(discount.value) || 0;
     const disc = Math.round(Math.min(discPct.value ? (sub * Math.min(dv, 100)) / 100 : dv, sub) * 100) / 100;
     const tp = Number(taxPercent.value) || 0;
-    const tax = Math.round((sub - disc) * tp) / 100;
-    const total = Math.round((sub - disc + tax) * 100) / 100;
+    const taxBase = sub - disc;
+    const selectedProfile = taxProfiles.value.find(x => x.id === taxProfileId.value);
+    const inclusive = selectedProfile?.calculation === 'inclusive';
+    const tax = Math.round((inclusive && tp > 0 ? taxBase - (taxBase / (1 + tp / 100)) : taxBase * tp / 100) * 100) / 100;
+    const total = Math.round((inclusive ? taxBase : taxBase + tax) * 100) / 100;
     const p = method.value === 'credit' ? Number(paid.value) || 0 : paid.value === '' ? total : Number(paid.value);
     return { sub, disc, tp, tax, total, paid: p, change: Math.round((p - total) * 100) / 100, units: cart.value.reduce((s, c) => s + c.qty, 0) };
 });
@@ -297,12 +320,22 @@ async function checkout() {
     if (t.change < 0 && !customer.value) {
         return Swal.fire({ icon: 'warning', title: 'Payment short', html: `Total <b>${money(t.total)}</b>, paid <b>${money(t.paid)}</b>.<br>Select a customer to sell on credit.` });
     }
+    let prescriptionId = null;
+    if (cart.value.some((line) => line.requiresPrescription)) {
+        const answer = await Swal.fire({ title: 'Prescription required', text: 'Enter the approved prescription number (RX-...).', input: 'text', inputPlaceholder: 'RX-YYYYMMDD-XXXXX', showCancelButton: true, confirmButtonText: 'Verify prescription', inputValidator: (v) => v?.trim() ? undefined : 'Prescription number is required.' });
+        if (!answer.isConfirmed) return;
+        try { const { data: rx } = await api.get(`/prescriptions/find/${encodeURIComponent(answer.value.trim())}`, { silent: true });
+            if (rx.status !== 'approved') return Swal.fire({ icon: 'warning', title: 'Prescription not approved', text: `Current status: ${rx.status}` });
+            if (customer.value?.id && rx.customer_id && Number(rx.customer_id) !== Number(customer.value.id)) return Swal.fire({ icon: 'warning', title: 'Customer mismatch', text: 'This prescription belongs to another customer.' });
+            prescriptionId = rx.id;
+        } catch (e) { return Swal.fire({ icon: 'error', title: 'Prescription not found', text: e.response?.data?.message || 'Check the prescription number.' }); }
+    }
     busy.value = true;
     try {
         const { data } = await api.post('/pos/checkout', {
             items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })),
-            customer_id: customer.value?.id || null,
-            discount: t.disc, tax_percent: t.tp, paid: t.paid, payment_method: method.value,
+            customer_id: customer.value?.id || null, prescription_id: prescriptionId,
+            discount: t.disc, tax_percent: t.tp, tax_profile_id: taxProfileId.value, paid: t.paid, payment_method: method.value,
         });
         resetSale();
         loadProducts();
@@ -335,6 +368,7 @@ onMounted(async () => {
     searchEl.value?.focus();
     loadProducts();
     categories.value = (await api.get('/lookups')).data.categories;
+    try { taxProfiles.value = await api.get('/tax-profiles').then(r=>r.data); const def=taxProfiles.value.find(x=>x.is_default); if(def){taxProfileId.value=def.id;taxPercent.value=Number(def.rate);} } catch(e) {}
     if (route.query.customer) { try { customer.value = (await api.get(`/customers/${route.query.customer}`)).data.data; } catch (e) { /* invalid customer link */ } }
 });
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); controller?.abort(); });

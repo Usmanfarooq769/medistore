@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CashierSessionController;
+use App\Http\Controllers\Api\PrescriptionController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\LookupController;
@@ -34,8 +35,8 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
 
     // POS
     Route::get('pos/products', [PosController::class, 'products']);
-    Route::post('pos/checkout', [PosController::class, 'checkout']);
     Route::get('pos/scan/{barcode}', [PosController::class, 'scan'])->where('barcode', '.*');
+    Route::post('pos/checkout', [PosController::class, 'checkout']);
 
     // Cashier shift and till reconciliation
     Route::get('cashier-session/current', [CashierSessionController::class, 'current']);
@@ -46,6 +47,13 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
     // Medicines lookup (POS / returns)
     Route::get('medicines/search', [MedicineController::class, 'search']);
     Route::get('medicines/{medicine}/batches', [MedicineController::class, 'batches']);
+
+    // Prescriptions: cashiers can upload/view; only admin can approve/reject.
+    Route::get('tax-profiles', [\App\Http\Controllers\Api\TaxProfileController::class, 'index']);
+    Route::get('prescriptions', [PrescriptionController::class, 'index']);
+    Route::get('prescriptions/find/{prescriptionNo}', [PrescriptionController::class, 'find']);
+    Route::get('prescriptions/{prescription}/file', [PrescriptionController::class, 'file']);
+    Route::post('prescriptions', [PrescriptionController::class, 'store']);
 
     // Customers
     Route::get('customers/{customer}/sales', [CustomerController::class, 'sales']);
@@ -72,6 +80,38 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
 /* ---------------- Admin only ---------------- */
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('dashboard', DashboardController::class);
+    Route::post('prescriptions/{prescription}/review', [PrescriptionController::class, 'review']);
+
+    // Purchase orders and receiving workflow
+    Route::get('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'index']);
+    Route::post('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'store']);
+    Route::get('purchase-orders/{purchaseOrder}', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'show']);
+    Route::post('purchase-orders/{purchaseOrder}/review', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'approve']);
+    Route::post('purchase-orders/{purchaseOrder}/receive', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'receive']);
+
+    // Branches and inter-branch transfers
+    Route::get('branches', [\App\Http\Controllers\Api\BranchController::class, 'index']);
+    Route::post('branches', [\App\Http\Controllers\Api\BranchController::class, 'store']);
+    Route::put('branches/{branch}', [\App\Http\Controllers\Api\BranchController::class, 'update']);
+    Route::get('branch-transfers', [\App\Http\Controllers\Api\BranchTransferController::class, 'index']);
+    Route::post('branch-transfers', [\App\Http\Controllers\Api\BranchTransferController::class, 'store']);
+    Route::post('branch-transfers/{transfer}/review', [\App\Http\Controllers\Api\BranchTransferController::class, 'approve']);
+    Route::get('branch-stock', [\App\Http\Controllers\Api\BranchTransferController::class, 'stock']);
+
+    // Expenses, tax and accounting
+    Route::apiResource('expenses', \App\Http\Controllers\Api\ExpenseController::class)->except('show');
+    Route::post('tax-profiles', [\App\Http\Controllers\Api\TaxProfileController::class, 'store']);
+    Route::put('tax-profiles/{taxProfile}', [\App\Http\Controllers\Api\TaxProfileController::class, 'update']);
+    Route::delete('tax-profiles/{taxProfile}', [\App\Http\Controllers\Api\TaxProfileController::class, 'destroy']);
+    Route::get('reports/tax', [\App\Http\Controllers\Api\TaxProfileController::class, 'report']);
+    Route::get('accounting/accounts', [\App\Http\Controllers\Api\AccountingController::class, 'accounts']);
+    Route::get('accounting/journals', [\App\Http\Controllers\Api\AccountingController::class, 'journals']);
+    Route::post('accounting/journals', [\App\Http\Controllers\Api\AccountingController::class, 'storeJournal']);
+    Route::get('accounting/income-statement', [\App\Http\Controllers\Api\AccountingController::class, 'incomeStatement']);
+    Route::get('accounting/cash-flow', [\App\Http\Controllers\Api\AccountingController::class, 'cashFlow']);
+    Route::get('accounting/balance-sheet', [\App\Http\Controllers\Api\AccountingController::class, 'balanceSheet']);
+    Route::get('accounting/trial-balance', [\App\Http\Controllers\Api\AccountingController::class, 'trialBalance']);
+    Route::get('backups', fn () => \App\Models\BackupRun::latest()->paginate(20));
 
     Route::apiResource('categories', CategoryController::class)->except('show');
     Route::apiResource('manufacturers', ManufacturerController::class)->except('show');

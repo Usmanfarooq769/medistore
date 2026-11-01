@@ -8,7 +8,7 @@ class SaleReturn extends Model
 {
     protected $fillable = [
         'return_no', 'sale_id', 'customer_id', 'customer_name', 'return_date', 'subtotal', 'deduction',
-        'total', 'due_adjusted', 'refund_amount', 'refund_method', 'reason', 'user_id',
+        'total', 'due_adjusted', 'refund_amount', 'refund_method', 'reason', 'user_id', 'branch_id',
     ];
 
     protected $casts = [

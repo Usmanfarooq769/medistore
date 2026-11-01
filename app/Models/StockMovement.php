@@ -8,7 +8,7 @@ class StockMovement extends Model
 {
     public const UPDATED_AT = null;
 
-    protected $fillable = ['medicine_id', 'medicine_batch_id', 'type', 'quantity', 'balance_after', 'reference', 'note', 'user_id'];
+    protected $fillable = ['medicine_id', 'medicine_batch_id', 'type', 'quantity', 'balance_after', 'reference', 'note', 'user_id', 'branch_id'];
 
     public function medicine()
     {

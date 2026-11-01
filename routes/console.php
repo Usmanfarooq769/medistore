@@ -10,3 +10,7 @@ Artisan::command('inspire', function () {
 
 // Send the store's daily closing report to the configured super-admin email.
 Schedule::command('store:daily-report')->dailyAt('23:59')->withoutOverlapping();
+
+// Daily WhatsApp stock digest and encrypted off-site database backup.
+Schedule::command('store:whatsapp-stock-alerts')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('store:backup-cloud')->dailyAt('02:00')->withoutOverlapping();

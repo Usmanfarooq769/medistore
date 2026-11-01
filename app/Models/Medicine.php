@@ -9,7 +9,7 @@ class Medicine extends Model
 {
     protected $fillable = [
         'name', 'generic_name', 'strength', 'category_id', 'manufacturer_id', 'barcode', 'unit',
-        'pack_size', 'stock_units_are_base', 'purchase_price', 'sale_price', 'reorder_level', 'rack', 'is_active',
+        'pack_size', 'stock_units_are_base', 'requires_prescription', 'purchase_price', 'sale_price', 'reorder_level', 'rack', 'is_active',
     ];
 
     protected $casts = [
@@ -20,6 +20,7 @@ class Medicine extends Model
         'stock_units_are_base' => 'boolean',
         'total_stock'    => 'integer',
         'is_active'      => 'boolean',
+        'requires_prescription' => 'boolean',
     ];
 
     public function category()
@@ -46,6 +47,7 @@ class Medicine extends Model
     public function sellableBatches()
     {
         return $this->hasMany(MedicineBatch::class)
+            ->where('branch_id', \App\Services\BranchContext::id())
             ->where('quantity', '>', 0)
             ->where(fn ($q) => $q->whereNull('expiry_date')->orWhere('expiry_date', '>=', today()))
             ->orderByRaw('expiry_date IS NULL, expiry_date ASC')
@@ -54,14 +56,14 @@ class Medicine extends Model
 
     public function scopeLowStock(Builder $q): Builder
     {
-        return $q->whereColumn('total_stock', '<=', 'reorder_level');
+        return $q->whereRaw('(SELECT COALESCE(SUM(mb.quantity),0) FROM medicine_batches mb WHERE mb.medicine_id = medicines.id AND mb.branch_id = ? AND (mb.expiry_date IS NULL OR mb.expiry_date >= ?)) <= medicines.reorder_level', [\App\Services\BranchContext::id(), today()->toDateString()]);
     }
 
     /** Adds `sellable_stock` column (non-expired stock) with one sub-query */
     public function scopeWithSellableStock(Builder $q): Builder
     {
         return $q->withSum(['batches as sellable_stock' => function ($b) {
-            $b->where('quantity', '>', 0)
+            $b->where('branch_id', \App\Services\BranchContext::id())->where('quantity', '>', 0)
               ->where(fn ($w) => $w->whereNull('expiry_date')->orWhere('expiry_date', '>=', today()));
         }], 'quantity');
     }
@@ -70,7 +72,7 @@ class Medicine extends Model
     public function scopeSellable(Builder $q): Builder
     {
         return $q->whereHas('batches', function ($b) {
-            $b->where('quantity', '>', 0)
+            $b->where('branch_id', \App\Services\BranchContext::id())->where('quantity', '>', 0)
               ->where(fn ($w) => $w->whereNull('expiry_date')->orWhere('expiry_date', '>=', today()));
         });
     }
@@ -79,7 +81,7 @@ class Medicine extends Model
     public function scopeWithNearestExpiry(Builder $q): Builder
     {
         return $q->withMin(['batches as nearest_expiry' => function ($b) {
-            $b->where('quantity', '>', 0)->where('expiry_date', '>=', today());
+            $b->where('branch_id', \App\Services\BranchContext::id())->where('quantity', '>', 0)->where('expiry_date', '>=', today());
         }], 'expiry_date');
     }
 

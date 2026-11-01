@@ -9,6 +9,8 @@ use App\Models\MedicineBatch;
 use App\Models\PurchaseReturn;
 use App\Models\Supplier;
 use App\Services\StockService;
+use App\Services\BranchContext;
+use App\Services\JournalPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -24,7 +26,7 @@ class PurchaseReturnController extends Controller
     public function index(Request $request)
     {
         return PurchaseReturnResource::collection(
-            PurchaseReturn::with(['supplier:id,name', 'user:id,name'])->withCount('items')
+            PurchaseReturn::with(['supplier:id,name', 'user:id,name'])->withCount('items')->where('branch_id', BranchContext::id())
                 ->when($request->search, fn ($q, $s) => $q->where('return_no', 'like', "%{$s}%"))
                 ->when($request->supplier_id, fn ($q, $v) => $q->where('supplier_id', $v))
                 ->when($request->from, fn ($q, $d) => $q->where('return_date', '>=', $d))
@@ -36,6 +38,7 @@ class PurchaseReturnController extends Controller
 
     public function show(PurchaseReturn $purchaseReturn)
     {
+        abort_unless((int)$purchaseReturn->branch_id === BranchContext::id(), 404);
         return new PurchaseReturnResource($purchaseReturn->load(['supplier', 'user:id,name', 'items.medicine:id,name,strength']));
     }
 
@@ -50,12 +53,13 @@ class PurchaseReturnController extends Controller
                 'refund_type' => $data['refund_type'],
                 'reason'      => $data['reason'] ?? null,
                 'user_id'     => auth()->id(),
+                'branch_id'   => BranchContext::id(),
             ]);
             $return->update(['return_no' => 'PRT-' . now()->format('Ymd') . '-' . str_pad($return->id, 5, '0', STR_PAD_LEFT)]);
 
             $total = 0;
             foreach ($data['items'] as $row) {
-                $batch = MedicineBatch::lockForUpdate()->findOrFail($row['medicine_batch_id']);
+                $batch = MedicineBatch::lockForUpdate()->where('branch_id', BranchContext::id())->findOrFail($row['medicine_batch_id']);
                 $qty = (int) $row['quantity'];
                 $lineTotal = round((float) $batch->purchase_price * $qty, 2);
                 $total += $lineTotal;
@@ -79,9 +83,9 @@ class PurchaseReturnController extends Controller
                 Supplier::whereKey($data['supplier_id'])->decrement('balance', $total);
             }
 
+            app(JournalPostingService::class)->postPurchaseReturn($return->load('items'));
             return $return;
         });
-
         StockService::flushCache();
 
         return response()->json(['message' => "Return {$return->return_no} saved. Stock reduced.", 'data' => new PurchaseReturnResource($return)], 201);
