@@ -29,7 +29,6 @@
                             <option value="correction">Physical count correction</option><option value="other">Other</option></select></div>
                         <div class="mb-3"><label class="form-label">Note</label><input v-model="form.note" class="form-control"></div>
                         <button class="btn btn-primary w-100" :disabled="saving"><i class="bi bi-check2"></i> Save adjustment</button>
-                        <div class="small text-muted mt-2">Returning stock to a supplier? Use <router-link to="/supplier-returns/new">Return to Supplier</router-link>.</div>
                     </form>
                 </div>
             </div>

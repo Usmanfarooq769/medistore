@@ -19,9 +19,9 @@
             </template>
         </nav>
 
-        <div class="sidebar-foot">
+        <!-- <div class="sidebar-foot">
             Press <kbd>F1</kbd> anytime to start a new sale
-        </div>
+        </div> -->
     </aside>
     <div v-if="sideOpen" class="sidebar-backdrop d-lg-none" @click="sideOpen = false"></div>
 

@@ -1,7 +1,5 @@
 <template>
     <div>
-        <div class="alert alert-light border small py-2"><i class="bi bi-lightbulb text-warning"></i>
-            Step 1: add the medicine here. Step 2: add <b>stock</b> through <router-link to="/purchases/create">New Purchase</router-link> (batch + expiry). Stock is never typed by hand.</div>
         <div class="card">
             <div class="card-header">
                 <div class="row g-2 align-items-center">

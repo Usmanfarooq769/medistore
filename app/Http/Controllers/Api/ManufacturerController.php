@@ -8,7 +8,6 @@ use App\Models\Manufacturer;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-/** Company that MAKES the medicine (GSK, Abbott ...) */
 class ManufacturerController extends Controller
 {
     public function index(Request $request)

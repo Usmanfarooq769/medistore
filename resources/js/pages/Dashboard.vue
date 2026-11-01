@@ -3,7 +3,6 @@
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
             <div>
                 <h4 class="fw-bold mb-0">Hello, {{ auth.user?.name }} 👋</h4>
-                <small class="text-muted">Flow: <b>Supplier → Purchase (stock in) → POS sale → Receipt → Return → Reports</b></small>
             </div>
             <button class="btn btn-sm btn-light" @click="load"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
         </div>
@@ -31,10 +30,14 @@
         <div class="row g-3 mb-3" v-if="d">
             <div class="col-lg-8"><div class="card h-100"><div class="card-header fw-semibold">Sales – last 7 days</div><div class="card-body"><canvas ref="chartEl" height="110"></canvas></div></div></div>
             <div class="col-lg-4"><div class="card h-100"><div class="card-header fw-semibold">Top selling (30 days)</div>
+            <div class="card-body">
                 <ul class="list-group list-group-flush">
                     <li v-for="t in d.top" :key="t.name" class="list-group-item d-flex justify-content-between"><span>{{ t.name }}</span><span class="badge bg-success-subtle text-success">{{ t.qty }} sold</span></li>
                     <li v-if="!d.top.length" class="list-group-item text-muted">No sales yet</li>
-                </ul></div></div>
+                </ul>
+            </div>
+            </div>
+        </div>
         </div>
 
         <div class="row g-3" v-if="d">

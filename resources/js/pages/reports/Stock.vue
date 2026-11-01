@@ -1,10 +1,33 @@
 <template>
     <div>
         <div class="row g-3 mb-3">
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="small text-muted">Units in stock</div><div class="fs-4 fw-bold">{{ num(totals.units) }}</div></div></div></div>
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="small text-muted">Stock value (cost)</div><div class="fs-4 fw-bold text-primary">{{ money(totals.cost_value) }}</div></div></div></div>
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="small text-muted">Stock value (sale)</div><div class="fs-4 fw-bold text-success">{{ money(totals.sale_value) }}</div>
-                <div class="small text-muted">Potential profit {{ money(totals.sale_value - totals.cost_value) }}</div></div></div></div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="small text-muted">Units in stock</div>
+                        <div class="fs-4 fw-bold">{{ num(totals.units) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="small text-muted">Stock value (cost)</div>
+                        <div class="fs-4 fw-bold text-primary">{{ money(totals.cost_value) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="small text-muted">Stock value (sale)</div>
+                        <div class="fs-4 fw-bold text-success">{{ money(totals.sale_value) }}</div>
+                </div>
+            </div>
+        </div>
+                 <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body"><div class="small text-muted">Potential profit</div><div class="fs-4 fw-bold text-primary">{{ money(totals.sale_value - totals.cost_value) }}</div></div></div></div>
         </div>
         <div class="card">
             <div class="card-header d-flex justify-content-between">

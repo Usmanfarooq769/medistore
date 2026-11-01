@@ -17,13 +17,18 @@
             <div class="row g-3">
                 <div class="col-lg-7"><div class="card h-100"><div class="card-header fw-semibold">Day-wise sales</div><div class="card-body"><canvas ref="chartEl" height="120"></canvas></div></div></div>
                 <div class="col-lg-5"><div class="card h-100"><div class="card-header fw-semibold">Top 15 medicines</div>
+                   <div class="card-body">
                     <div class="table-responsive"><table class="table table-sm mb-0">
                         <thead class="table-light"><tr><th>Medicine</th><th class="text-end">Qty</th><th class="text-end">Revenue</th><th class="text-end">Profit</th></tr></thead>
                         <tbody>
                             <tr v-for="m in r.top" :key="m.medicine_name"><td>{{ m.medicine_name }}</td><td class="text-end">{{ m.qty }}</td><td class="text-end">{{ Number(m.revenue).toFixed(2) }}</td><td class="text-end text-success">{{ Number(m.profit).toFixed(2) }}</td></tr>
                             <tr v-if="!r.top.length"><td colspan="4" class="text-center text-muted py-3">No sales</td></tr>
                         </tbody>
-                    </table></div></div></div>
+                    </table>
+                </div>
+                </div>
+            </div>
+        </div>
             </div>
         </template>
     </div>
