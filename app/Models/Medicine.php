@@ -9,7 +9,7 @@ class Medicine extends Model
 {
     protected $fillable = [
         'name', 'generic_name', 'strength', 'category_id', 'manufacturer_id', 'barcode', 'unit',
-        'purchase_price', 'sale_price', 'reorder_level', 'rack', 'is_active', 'pack_size',
+        'pack_size', 'stock_units_are_base', 'purchase_price', 'sale_price', 'reorder_level', 'rack', 'is_active',
     ];
 
     protected $casts = [
@@ -17,6 +17,7 @@ class Medicine extends Model
         'sale_price'     => 'decimal:2',
         'reorder_level'  => 'integer',
         'pack_size'      => 'integer',
+        'stock_units_are_base' => 'boolean',
         'total_stock'    => 'integer',
         'is_active'      => 'boolean',
     ];

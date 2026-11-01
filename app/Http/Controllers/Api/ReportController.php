@@ -140,4 +140,25 @@ class ReportController extends Controller
 
         return MedicineResource::collection($list)->additional(['totals' => $totals]);
     }
+
+    /** Batch-level profitability using immutable sale-item cost snapshots. */
+    public function batchProfitability(Request $request)
+    {
+        $from = $request->date('from') ?? today()->startOfMonth();
+        $to = $request->date('to') ?? today();
+        $rows = SaleItem::query()->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->leftJoin('medicine_batches', 'medicine_batches.id', '=', 'sale_items.medicine_batch_id')
+            ->whereBetween('sales.sale_date', [$from, $to])
+            ->groupBy('sale_items.medicine_id', 'sale_items.medicine_name', 'sale_items.medicine_batch_id', 'sale_items.batch_no', 'sale_items.expiry_date')
+            ->selectRaw('sale_items.medicine_id, sale_items.medicine_name, sale_items.medicine_batch_id, sale_items.batch_no, sale_items.expiry_date,
+                SUM(sale_items.quantity - sale_items.returned_qty) as sold_base_units,
+                SUM(sale_items.price * (sale_items.quantity - sale_items.returned_qty) * (1 - COALESCE(sales.discount / NULLIF(sales.subtotal, 0), 0))) as revenue,
+                SUM(sale_items.cost_price * (sale_items.quantity - sale_items.returned_qty)) as cost,
+                SUM((sale_items.price * (1 - COALESCE(sales.discount / NULLIF(sales.subtotal, 0), 0)) - sale_items.cost_price) * (sale_items.quantity - sale_items.returned_qty)) as gross_profit')
+            ->orderByDesc('gross_profit')->get();
+        return response()->json(['from' => $from->toDateString(), 'to' => $to->toDateString(), 'totals' => [
+            'revenue' => (float) $rows->sum('revenue'), 'cost' => (float) $rows->sum('cost'), 'gross_profit' => (float) $rows->sum('gross_profit'), 'units' => (int) $rows->sum('sold_base_units'),
+        ], 'data' => $rows]);
+    }
+
 }

@@ -25,6 +25,7 @@ class PosController extends Controller
         return MedicineResource::collection(
             Medicine::query()
                 ->where('is_active', true)
+                ->where(fn ($w) => $w->where('stock_units_are_base', true)->orWhere('pack_size', '<=', 1))
                 ->sellable()
                 ->withSellableStock()
                 ->withNearestExpiry()
@@ -35,27 +36,44 @@ class PosController extends Controller
         );
     }
 
+    /** Exact barcode lookup used by USB/Bluetooth HID scanners. */
+    public function scan(string $barcode)
+    {
+        $medicine = Medicine::where('barcode', $barcode)->where('is_active', true)->withSellableStock()->withNearestExpiry()->first();
+        if (! $medicine) return response()->json(['message' => 'No active medicine found for this barcode.'], 404);
+        if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1) return response()->json(["message" => "Convert this medicine's legacy stock to individual units before selling."], 422);
+        if ((int) ($medicine->sellable_stock ?? 0) < 1) return response()->json(['message' => 'This medicine has no sellable stock.'], 422);
+        return new MedicineResource($medicine);
+    }
+
     public function checkout(CheckoutRequest $request)
     {
         $data = $request->validated();
         $user = $request->user();
         $allowPriceEdit = $user->isAdmin() || setting('cashier_price_edit', '0') === '1';
 
-        $lines = collect($data['items'])->groupBy('id')->map(fn ($g) => [
-            'qty'   => (int) $g->sum('quantity'),
+        $lines = collect($data['items'])->groupBy(fn ($row) => $row['id'].'|'.($row['sale_unit'] ?? 'pack'))->map(fn ($g) => [
+            'id' => (int) $g->first()['id'],
+            'sale_unit' => $g->first()['sale_unit'] ?? 'pack',
+            'qty' => (int) $g->sum('quantity'),
             'price' => $g->first()['price'] ?? null,
         ]);
 
         $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user) {
-            $sale = Sale::create(['sale_date' => today(), 'user_id' => $user->id, 'payment_method' => $data['payment_method']]);
+            $session = \App\Models\CashierSession::where('user_id', $user->id)->whereNull('closed_at')->latest('id')->first();
+            if ($user->role === 'cashier' && ! $session) throw ValidationException::withMessages(['cashier_session' => 'Open your cashier shift before taking sales.']);
+            $sale = Sale::create(['sale_date' => today(), 'user_id' => $user->id, 'cashier_session_id' => $session?->id, 'payment_method' => $data['payment_method']]);
             $invoice = 'INV-' . now()->format('Ymd') . '-' . str_pad($sale->id, 5, '0', STR_PAD_LEFT);
             $subtotal = 0;
 
-            foreach ($lines as $medicineId => $line) {
-                $medicine = Medicine::lockForUpdate()->findOrFail($medicineId);
-
-                foreach ($this->stock->deductFefo($medicine, $line['qty'], $invoice) as [$batch, $qty]) {
-                    $price = $allowPriceEdit && $line['price'] !== null ? (float) $line['price'] : (float) $batch->sale_price;
+            foreach ($lines as $line) {
+                $medicine = Medicine::lockForUpdate()->findOrFail($line['id']);
+                $packSize = max(1, (int) ($medicine->pack_size ?? 1));
+                $factor = $line['sale_unit'] === 'pack' ? $packSize : 1;
+                $baseQty = $line['qty'] * $factor;
+                foreach ($this->stock->deductFefo($medicine, $baseQty, $invoice) as [$batch, $qty]) {
+                    $enteredPrice = $allowPriceEdit && $line['price'] !== null ? (float) $line['price'] : (float) $batch->sale_price * $factor;
+                    $price = $enteredPrice / $factor;
                     $total = round($price * $qty, 2);
                     $subtotal += $total;
 
@@ -66,6 +84,9 @@ class PosController extends Controller
                         'batch_no'          => $batch->batch_no,
                         'expiry_date'       => $batch->expiry_date,
                         'quantity'          => $qty,
+                        'sale_unit'         => $line['sale_unit'] === 'pack' ? 'pack' : 'unit',
+                        'sale_quantity'     => round($qty / $factor, 3),
+                        'pack_size'         => $packSize,
                         'price'             => $price,
                         'cost_price'        => $batch->purchase_price,
                         'total'             => $total,
@@ -124,7 +145,7 @@ class PosController extends Controller
         return response()->json([
             'message'   => 'Sale completed.',
             'data'      => new SaleResource($sale),
-            'low_stock' => Medicine::whereIn('id', $lines->keys())->lowStock()->get(['id', 'name', 'strength', 'total_stock']),
+            'low_stock' => Medicine::whereIn('id', $lines->pluck('id'))->lowStock()->get(['id', 'name', 'strength', 'total_stock']),
         ], 201);
     }
 }

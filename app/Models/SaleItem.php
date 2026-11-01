@@ -8,10 +8,10 @@ class SaleItem extends Model
 {
     protected $fillable = [
         'sale_id', 'medicine_id', 'medicine_batch_id', 'medicine_name', 'batch_no', 'expiry_date',
-        'quantity', 'returned_qty', 'price', 'cost_price', 'total',
+        'quantity', 'sale_unit', 'sale_quantity', 'pack_size', 'returned_qty', 'price', 'cost_price', 'total',
     ];
 
-    protected $casts = ['expiry_date' => 'date', 'price' => 'decimal:2', 'cost_price' => 'decimal:2', 'total' => 'decimal:2'];
+    protected $casts = ['expiry_date' => 'date', 'price' => 'decimal:4', 'cost_price' => 'decimal:4', 'total' => 'decimal:2'];
 
     public function sale()
     {

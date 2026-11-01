@@ -19,7 +19,7 @@
 
             <div class="card">
                 <div class="card-header">
-                    <label class="form-label small mb-1">Add medicine (name / generic / scan barcode, Enter to add)</label>
+                    <label class="form-label small mb-1">Add medicine (name / generic / scan barcode, Enter to add)</label><div class="small text-muted mb-2">Purchase quantities and prices are entered per pack. Stock is converted into individual tablets/units automatically.</div>
                     <Autocomplete url="/medicines/search" placeholder="Search medicine…" icon="bi-upc-scan" size="lg" empty-text="Not found – add it first in Medicines" @select="addRow">
                         <template #item="{ item }">
                             <div class="d-flex justify-content-between"><span><b>{{ item.display_name }}</b> <small class="text-muted">{{ item.generic_name }}</small></span>
@@ -30,11 +30,11 @@
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-0">
                         <thead class="table-light"><tr>
-                            <th style="min-width:170px">Medicine</th><th style="width:120px">Batch *</th><th style="width:140px">Expiry *</th><th style="width:80px">Qty *</th>
-                            <th style="width:75px">Bonus</th><th style="width:105px">Cost *</th><th style="width:105px">Sale *</th><th class="text-end" style="width:100px">Total</th><th></th></tr></thead>
+                            <th style="min-width:170px">Medicine</th><th style="width:120px">Batch *</th><th style="width:140px">Expiry *</th><th style="width:80px">Packs *</th>
+                            <th style="width:75px">Bonus</th><th style="width:105px">Cost / pack *</th><th style="width:105px">Sale / pack *</th><th class="text-end" style="width:100px">Total</th><th></th></tr></thead>
                         <tbody>
                             <tr v-for="(r, i) in form.items" :key="r.key">
-                                <td><div class="fw-semibold small">{{ r.name }}</div><div class="small text-muted">Stock {{ r.stock }} {{ r.unit }}</div></td>
+                                <td><div class="fw-semibold small">{{ r.name }}</div><div class="small text-muted">1 {{ r.unit }} = {{ r.pack_size }} units · Current stock {{ r.stock }} base units</div></td>
                                 <td><input v-model="r.batch_no" class="form-control form-control-sm" required :ref="(el) => (i === form.items.length - 1 && el ? (lastBatch = el) : null)"></td>
                                 <td><input v-model="r.expiry_date" type="date" :min="tomorrow" class="form-control form-control-sm" required></td>
                                 <td><input v-model.number="r.quantity" type="number" min="1" class="form-control form-control-sm" required></td>
@@ -95,11 +95,12 @@ const form = reactive({ supplier_id: route.query.supplier ? Number(route.query.s
 
 const supplier = computed(() => suppliers.value.find((s) => s.id === form.supplier_id));
 const subtotal = computed(() => form.items.reduce((s, r) => s + (r.quantity || 0) * (r.purchase_price || 0), 0));
-const units = computed(() => form.items.reduce((s, r) => s + (r.quantity || 0) + (r.bonus_qty || 0), 0));
+const units = computed(() => form.items.reduce((s, r) => s + ((r.quantity || 0) + (r.bonus_qty || 0)) * (r.pack_size || 1), 0));
 const total = computed(() => Math.round((Math.max(subtotal.value - (form.discount || 0), 0) + (form.tax || 0)) * 100) / 100);
 
 async function addRow(m) {
-    form.items.push({ key: ++key, medicine_id: m.id, name: m.display_name, unit: m.unit, stock: m.total_stock, batch_no: '', expiry_date: '', quantity: 1, bonus_qty: 0, purchase_price: m.purchase_price, sale_price: m.sale_price });
+    if (!m.stock_units_are_base && Number(m.pack_size || 1) > 1) { notify("Convert this medicine's legacy stock units on the Medicines page before purchasing."); return; }
+    form.items.push({ key: ++key, medicine_id: m.id, name: m.display_name, unit: m.unit, pack_size: m.pack_size || 1, stock: m.total_stock, batch_no: '', expiry_date: '', quantity: 1, bonus_qty: 0, purchase_price: m.purchase_price, sale_price: m.sale_price });
     await nextTick();
     lastBatch.value?.focus();
 }

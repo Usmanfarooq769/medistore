@@ -140,6 +140,7 @@ const menu = computed(() => {
     return [
         a && { to: '/dashboard', icon: 'bi-speedometer2', label: 'Dashboard' },
         { to: '/pos', icon: 'bi-cart3', label: 'POS / Sell' },
+        { to: '/cashier/closing', icon: 'bi-safe', label: 'Cashier Shift / Closing' },
         a && { section: 'Stock in' },
         a && { to: '/purchases/create', icon: 'bi-box-arrow-in-down', label: 'New Purchase' },
         a && { to: '/purchases', icon: 'bi-journal-text', label: 'Purchase List' },
@@ -159,11 +160,13 @@ const menu = computed(() => {
         { section: 'Reports & alerts' },
         { to: '/reports/daily', icon: 'bi-calendar-check', label: 'Daily Closing' },
         a && { to: '/reports/summary', icon: 'bi-graph-up', label: 'Sales & Profit' },
+        a && { to: '/reports/batch-profitability', icon: 'bi-bar-chart-line', label: 'Batch Profitability' },
         a && { to: '/reports/stock', icon: 'bi-boxes', label: 'Stock Report' },
         { to: '/alerts/low-stock', icon: 'bi-exclamation-triangle', label: 'Low Stock', badge: () => alerts.counts.low_stock, badgeClass: 'bg-danger' },
         { to: '/alerts/expiry', icon: 'bi-calendar-x', label: 'Expiry', badge: expiryCount, badgeClass: 'bg-warning text-dark' },
         a && { section: 'System' },
         a && { to: '/users', icon: 'bi-person-gear', label: 'Users' },
+        a && { to: '/audit-logs', icon: 'bi-shield-check', label: 'Audit Trail' },
         a && { to: '/settings', icon: 'bi-gear', label: 'Settings' },
     ].filter(Boolean);
 });

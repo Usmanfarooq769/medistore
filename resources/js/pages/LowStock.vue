@@ -9,9 +9,9 @@
             <template #row="{ item: m }">
                 <tr>
                     <td class="fw-semibold">{{ m.display_name }}</td><td>{{ m.manufacturer || '—' }}</td>
-                    <td><span class="badge fs-6" :class="m.total_stock <= 0 ? 'bg-danger' : 'bg-warning text-dark'">{{ m.total_stock }}</span> <small>{{ m.unit }}</small></td>
+                    <td><span class="badge fs-6" :class="m.total_stock <= 0 ? 'bg-danger' : 'bg-warning text-dark'">{{ m.total_stock }}</span> <small>individual units</small></td>
                     <td>{{ m.reorder_level }}</td>
-                    <td class="fw-semibold">{{ suggest(m) }} {{ m.unit }}</td><td>{{ money(suggest(m) * m.purchase_price) }}</td>
+                    <td class="fw-semibold">{{ suggest(m) }} individual units</td><td>{{ money(suggest(m) * m.purchase_price / Math.max(m.pack_size || 1, 1)) }}</td>
                     <td class="text-end no-print"><router-link v-if="auth.isAdmin" :to="`/purchases/create?medicine=${m.id}`" class="btn btn-sm btn-success"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link></td>
                 </tr>
             </template>

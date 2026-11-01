@@ -26,12 +26,16 @@
                         <div class="small text-muted text-truncate">{{ m.generic_name || '\u00a0' }}</div>
                         <div class="d-flex justify-content-between align-items-end mt-2">
                             <span class="price">{{ money(m.sale_price) }}</span>
-                            <span class="badge" :class="m.sellable_stock <= m.reorder_level ? 'bg-warning text-dark' : 'bg-success-subtle text-success'">{{ m.sellable_stock }} {{ m.unit }}</span>
+                            <span class="badge" :class="m.sellable_stock <= m.reorder_level ? 'bg-warning text-dark' : 'bg-success-subtle text-success'">{{ m.sellable_stock }} units · {{ Math.floor(m.sellable_stock / (m.pack_size || 1)) }} packs</span>
                         </div>
                         <div class="small text-muted" style="font-size:.7rem"><span v-if="m.rack"><i class="bi bi-geo-alt"></i> {{ m.rack }} · </span>Exp {{ date(m.nearest_expiry) }}</div>
                     </div>
                 </div>
-                
+                <div class="card-footer small text-muted d-flex flex-wrap gap-3 align-items-center">
+                    <span><kbd>F2</kbd> search</span><span><kbd>↑↓←→</kbd> select</span><span><kbd>Enter</kbd> add</span>
+                    <span><kbd>F4</kbd> hold</span><span><kbd>F8</kbd> clear</span><span><kbd>F9</kbd> pay</span>
+                    <button v-if="hasMore" class="btn btn-sm btn-light ms-auto" @click="loadProducts(false)">Load more</button>
+                </div>
             </div>
         </div>
 
@@ -73,8 +77,9 @@
                     <div v-for="(c, i) in cart" :key="c.id" class="cart-line">
                         <div class="flex-grow-1 min-w-0">
                             <div class="fw-semibold small text-truncate">{{ c.name }}</div>
-                            <input v-if="priceEdit" v-model.number="c.price" type="number" step="0.01" min="0" class="form-control form-control-sm py-0" style="width:90px">
-                            <span v-else class="small text-muted">{{ money(c.price) }}</span>
+                            <select v-model="c.sale_unit" class="form-select form-select-sm my-1" style="max-width:125px" @change="changeSaleUnit(i)"><option value="pack">Pack ({{ c.packSize }} units)</option><option value="unit">Individual unit</option></select>
+                            <input v-if="priceEdit" v-model.number="c.price" type="number" step="0.01" min="0" class="form-control form-control-sm py-0" style="width:90px" @change="syncPackPrice(i)">
+                            <span v-else class="small text-muted">{{ money(c.price) }} / {{ c.sale_unit === 'pack' ? 'pack' : 'unit' }}</span>
                         </div>
                         <div class="qty-box">
                             <button @click="dec(i)"><i v-if="c.qty <= 1" class="bi bi-trash text-danger"></i><span v-else>−</span></button>
@@ -126,8 +131,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import api, { isCancel } from '../api';
 import { useRoute } from 'vue-router';
+import api, { isCancel } from '../api';
 import Autocomplete from '../components/Autocomplete.vue';
 import { useAuth } from '../stores/auth';
 import { date, debounce, getCurrency, money, stockChanged } from '../utils/format';
@@ -178,8 +183,7 @@ async function loadProducts(reset = true) {
         products.value = reset ? data.data : products.value.concat(data.data);
         hasMore.value = !!data.links?.next;
         if (reset) active.value = 0;
-        const term = q.value.trim();
-        if (term && data.data.length === 1 && data.data[0].barcode === term) { add(data.data[0]); q.value = ''; }
+
     } catch (e) {
         if (!isCancel(e)) products.value = [];
     } finally {
@@ -193,20 +197,29 @@ watch(category, () => loadProducts());
 const inCart = computed(() => Object.fromEntries(cart.value.map((c) => [c.id, c.qty])));
 
 function add(m) {
-    const line = cart.value.find((c) => c.id === m.id);
+    const packSize = Math.max(1, Number(m.pack_size || 1));
+    const line = cart.value.find((c) => c.id === m.id && c.sale_unit === 'pack');
     if (line) {
-        if (line.qty + 1 > m.sellable_stock) return Swal.fire({ icon: 'warning', title: 'Stock limit', text: `Only ${m.sellable_stock} ${m.unit} available`, timer: 2000 });
+        if ((line.qty + 1) * packSize > m.sellable_stock) return Swal.fire({ icon: 'warning', title: 'Stock limit', text: `Only ${m.sellable_stock} individual units available` , timer: 2000 });
         line.qty++;
         line.stock = m.sellable_stock;
     } else {
-        cart.value.push({ id: m.id, name: m.display_name, price: m.sale_price, stock: m.sellable_stock, unit: m.unit, qty: 1 });
+        cart.value.push({ id: m.id, name: m.display_name, price: Number(m.sale_price), packPrice: Number(m.sale_price), stock: Number(m.sellable_stock), packSize, unit: m.unit, sale_unit: 'pack', qty: 1 });
     }
     toast.fire({ icon: 'success', title: `${m.display_name} added`, timer: 700 });
+}
+function syncPackPrice(i) { const c = cart.value[i]; c.packPrice = c.sale_unit === 'pack' ? Number(c.price) : Number(c.price) * c.packSize; }
+function changeSaleUnit(i) {
+    const c = cart.value[i];
+    c.price = c.sale_unit === 'pack' ? c.packPrice : Number((c.packPrice / c.packSize).toFixed(4));
+    const maxQty = c.sale_unit === 'pack' ? Math.floor(c.stock / c.packSize) : c.stock;
+    c.qty = Math.max(1, Math.min(c.qty, maxQty || 1));
 }
 function setQty(i, v) {
     const c = cart.value[i];
     let n = Math.floor(Number(v)) || 1;
-    if (n > c.stock) { toast.fire({ icon: 'warning', title: `Only ${c.stock} available` }); n = c.stock; }
+    const max = c.sale_unit === 'pack' ? Math.floor(c.stock / c.packSize) : c.stock;
+    if (n > max) { toast.fire({ icon: 'warning', title: `Only ${max} ${c.sale_unit === 'pack' ? 'packs' : 'units'} available` }); n = max; }
     c.qty = Math.max(n, 1);
 }
 function dec(i) { if (cart.value[i].qty <= 1) cart.value.splice(i, 1); else cart.value[i].qty--; }
@@ -221,7 +234,26 @@ function onSearchKey(e) {
         nextTick(() => gridEl.value?.querySelector('.pos-card.active')?.scrollIntoView({ block: 'nearest' }));
     } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (products.value[active.value]) { add(products.value[active.value]); if (q.value) q.value = ''; }
+        const term = q.value.trim();
+        if (term) {
+            api.get(`/pos/scan/${encodeURIComponent(term)}`, { silent: true }).then(({ data }) => {
+                add(data.data || data);
+                q.value = '';
+            }).catch(async (error) => {
+                if (error.response?.status === 404) {
+                    try {
+                        const { data } = await api.get('/pos/products', { params: { q: term }, silent: true });
+                        products.value = data.data || [];
+                        active.value = 0;
+                        if (products.value.length === 1) { add(products.value[0]); q.value = ''; }
+                        else if (products.value.length > 1) toast.fire({ icon: 'info', title: 'Select the matching medicine from the results' });
+                        else toast.fire({ icon: 'warning', title: 'No matching medicine found' });
+                    } catch (e) { /* silent search failure */ }
+                } else {
+                    Swal.fire({ icon: 'warning', title: 'Barcode unavailable', text: error.response?.data?.message || 'This medicine cannot be sold until its stock units are configured.' });
+                }
+            });
+        } else if (products.value[active.value]) add(products.value[active.value]);
     }
 }
 
@@ -273,7 +305,7 @@ async function checkout() {
     busy.value = true;
     try {
         const { data } = await api.post('/pos/checkout', {
-            items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, price: priceEdit.value ? c.price : null })),
+            items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })),
             customer_id: customer.value?.id || null,
             discount: t.disc, tax_percent: t.tp, paid: t.paid, payment_method: method.value,
         });
@@ -308,10 +340,7 @@ onMounted(async () => {
     searchEl.value?.focus();
     loadProducts();
     categories.value = (await api.get('/lookups')).data.categories;
-    if (route.query.customer) {
-        try { customer.value = (await api.get(`/customers/${route.query.customer}`)).data.data; }
-        catch (e) { /* invalid customer id */ }
-    }
+    if (route.query.customer) { try { customer.value = (await api.get(`/customers/${route.query.customer}`)).data.data; } catch (e) { /* invalid customer link */ } }
 });
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); controller?.abort(); });
 </script>

@@ -11,7 +11,7 @@ class SaleReturnItem extends Model
         'expiry_date', 'quantity', 'price', 'total', 'condition', 'restocked',
     ];
 
-    protected $casts = ['expiry_date' => 'date', 'price' => 'decimal:2', 'total' => 'decimal:2', 'restocked' => 'boolean'];
+    protected $casts = ['expiry_date' => 'date', 'price' => 'decimal:4', 'total' => 'decimal:2', 'restocked' => 'boolean'];
 
     public function saleItem()
     {

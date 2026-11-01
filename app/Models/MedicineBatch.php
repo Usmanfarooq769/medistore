@@ -13,8 +13,8 @@ class MedicineBatch extends Model
 
     protected $casts = [
         'expiry_date'    => 'date',
-        'purchase_price' => 'decimal:2',
-        'sale_price'     => 'decimal:2',
+        'purchase_price' => 'decimal:4',
+        'sale_price'     => 'decimal:4',
     ];
 
     public function medicine()

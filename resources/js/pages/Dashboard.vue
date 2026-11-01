@@ -3,6 +3,7 @@
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
             <div>
                 <h4 class="fw-bold mb-0">Hello, {{ auth.user?.name }} 👋</h4>
+                <small class="text-muted">Flow: <b>Supplier → Purchase (stock in) → POS sale → Receipt → Return → Reports</b></small>
             </div>
             <button class="btn btn-sm btn-light" @click="load"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
         </div>
@@ -30,14 +31,10 @@
         <div class="row g-3 mb-3" v-if="d">
             <div class="col-lg-8"><div class="card h-100"><div class="card-header fw-semibold">Sales – last 7 days</div><div class="card-body"><canvas ref="chartEl" height="110"></canvas></div></div></div>
             <div class="col-lg-4"><div class="card h-100"><div class="card-header fw-semibold">Top selling (30 days)</div>
-            <div class="card-body">
                 <ul class="list-group list-group-flush">
                     <li v-for="t in d.top" :key="t.name" class="list-group-item d-flex justify-content-between"><span>{{ t.name }}</span><span class="badge bg-success-subtle text-success">{{ t.qty }} sold</span></li>
                     <li v-if="!d.top.length" class="list-group-item text-muted">No sales yet</li>
-                </ul>
-            </div>
-            </div>
-        </div>
+                </ul></div></div>
         </div>
 
         <div class="row g-3" v-if="d">
@@ -59,7 +56,7 @@
                     <thead class="table-light"><tr><th>Medicine</th><th>Stock</th><th>Re-order</th><th></th></tr></thead>
                     <tbody>
                         <tr v-for="m in d.low" :key="m.id"><td>{{ m.name }} <small class="text-muted">{{ m.strength }}</small></td>
-                            <td><span class="badge" :class="m.total_stock <= 0 ? 'bg-danger' : 'bg-warning text-dark'">{{ m.total_stock }} {{ m.unit }}</span></td><td>{{ m.reorder_level }}</td>
+                            <td><span class="badge" :class="m.total_stock <= 0 ? 'bg-danger' : 'bg-warning text-dark'">{{ m.total_stock }} units</span></td><td>{{ m.reorder_level }}</td>
                             <td><router-link class="btn btn-sm btn-success" :to="`/purchases/create?medicine=${m.id}`"><i class="bi bi-plus"></i></router-link></td></tr>
                         <tr v-if="!d.low.length"><td colspan="4" class="text-center text-muted py-4">All good 🎉</td></tr>
                     </tbody>

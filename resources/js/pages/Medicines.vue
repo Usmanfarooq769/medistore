@@ -1,5 +1,7 @@
 <template>
     <div>
+        <div class="alert alert-light border small py-2"><i class="bi bi-lightbulb text-warning"></i>
+            Step 1: add the medicine here. Step 2: add <b>stock</b> through <router-link to="/purchases/create">New Purchase</router-link> (batch + expiry). Stock is never typed by hand.</div>
         <div class="card">
             <div class="card-header">
                 <div class="row g-2 align-items-center">
@@ -48,7 +50,7 @@
                     <tr>
                         <th class="sortable" @click="sortBy('name')">Medicine <i :class="['bi', icon('name')]"></i></th>
                         <th>Category / Company</th>
-                        <th class="sortable" @click="sortBy('sale_price')">Price <i :class="['bi', icon('sale_price')]"></i></th>
+                        <th class="sortable" @click="sortBy('sale_price')">Price / pack <i :class="['bi', icon('sale_price')]"></i></th>
                         <th class="sortable" @click="sortBy('total_stock')">Stock <i :class="['bi', icon('total_stock')]"></i></th>
                         <th>Nearest expiry</th><th>Rack</th><th class="text-end">Actions</th>
                     </tr>
@@ -60,7 +62,7 @@
                         <td class="small">{{ m.category || '—' }}<div class="text-muted">{{ m.manufacturer }}</div></td>
                         <td><div class="fw-semibold">{{ money(m.sale_price) }}</div><div class="small text-muted">Cost {{ money(m.purchase_price) }}</div></td>
                         <td>
-                            <span class="fw-semibold" :class="m.total_stock <= 0 ? 'text-danger' : m.is_low ? 'text-warning-emphasis' : ''">{{ m.total_stock }}</span> <small class="text-muted">{{ m.unit }}</small>
+                            <span class="fw-semibold" :class="m.total_stock <= 0 ? 'text-danger' : m.is_low ? 'text-warning-emphasis' : ''">{{ m.total_stock }}</span> <small class="text-muted">individual units · {{ Math.floor(m.total_stock / (m.pack_size || 1)) }} packs</small>
                             <div class="stock-bar mt-1"><div :style="{ width: Math.min(100, m.total_stock / Math.max(m.reorder_level * 3, 1) * 100) + '%', background: m.total_stock <= 0 ? '#dc3545' : m.is_low ? '#ffc107' : '#198754' }"></div></div>
                         </td>
                         <td>
@@ -74,6 +76,7 @@
                         <td class="text-end text-nowrap">
                             <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-sm btn-outline-success" title="Purchase / add stock"><i class="bi bi-box-arrow-in-down"></i></router-link>
                             <router-link :to="`/medicines/${m.id}`" class="btn btn-sm btn-outline-secondary ms-1" title="Stock card"><i class="bi bi-card-list"></i></router-link>
+                            <button v-if="!m.stock_units_are_base" class="btn btn-sm btn-outline-warning ms-1" title="Convert legacy pack stock to individual units" @click="convertLegacyStock(m)"><i class="bi bi-arrow-left-right"></i></button>
                             <button class="btn btn-sm btn-outline-primary ms-1" title="Edit" @click="openForm(m)"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-danger ms-1" title="Delete" @click="remove(m)"><i class="bi bi-trash"></i></button>
                         </td>
@@ -93,12 +96,12 @@
                     <option v-for="c in lookups.manufacturers" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
                 <div class="col-md-4"><label class="form-label">Unit *</label><select v-model="form.unit" class="form-select">
                     <option v-for="u in units" :key="u" :value="u" class="text-capitalize">{{ u }}</option></select></div>
-                <div class="col-md-4"><label class="form-label">Pack size / units per pack *</label><input v-model.number="form.pack_size" type="number" min="1" class="form-control" required><div class="form-text">Example: 10 tablets per strip; stock is still tracked in the selected unit</div></div>
+                <div class="col-md-4"><label class="form-label">Pack size / units per pack *</label><input v-model.number="form.pack_size" type="number" min="1" class="form-control" :disabled="existingStock > 0 || existingHasHistory" required><div class="form-text">Example: 10 tablets per strip. Inventory is tracked in individual tablets; set this before the first purchase.</div></div>
                 <div class="col-md-4"><label class="form-label">Barcode</label><input v-model="form.barcode" class="form-control" placeholder="Scan or type"></div>
                 <div class="col-md-4"><label class="form-label">Purchase price *</label><input v-model="form.purchase_price" type="number" step="0.01" min="0" class="form-control" required></div>
                 <div class="col-md-4"><label class="form-label">Sale price (MRP) *</label><input v-model="form.sale_price" type="number" step="0.01" min="0" class="form-control" required>
                     <div v-if="form.sale_price && form.purchase_price" class="form-text" :class="margin < 0 ? 'text-danger' : 'text-success'">Margin {{ money(margin) }} ({{ marginPct }}%)</div></div>
-                <div class="col-md-4"><label class="form-label">Re-order level *</label><input v-model="form.reorder_level" type="number" min="0" class="form-control" required><div class="form-text">Low-stock alert at ≤ this</div></div>
+                <div class="col-md-4"><label class="form-label">Re-order level *</label><input v-model="form.reorder_level" type="number" min="0" class="form-control" required><div class="form-text">Low-stock alert at ≤ this individual-unit quantity</div></div>
                 <div class="col-md-4"><label class="form-label">Rack / shelf</label><input v-model="form.rack" class="form-control"></div>
                 <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch"><input id="act" v-model="form.is_active" class="form-check-input" type="checkbox"><label class="form-check-label" for="act">Active</label></div></div>
                 <div class="col-12 text-end">
@@ -130,6 +133,8 @@ const show = ref(false);
 const saving = ref(false);
 const downloadingTemplate = ref(false);
 const editId = ref(null);
+const existingStock = ref(0);
+const existingHasHistory = ref(false);
 const blank = { name: '', strength: '', generic_name: '', category_id: null, manufacturer_id: null, unit: 'strip', pack_size: 1, barcode: '', purchase_price: '', sale_price: '', reorder_level: 10, rack: '', is_active: true };
 const form = reactive({ ...blank });
 const margin = computed(() => Number(form.sale_price) - Number(form.purchase_price));
@@ -137,6 +142,8 @@ const marginPct = computed(() => (Number(form.purchase_price) ? ((margin.value /
 
 function openForm(m = null) {
     editId.value = m?.id || null;
+    existingStock.value = Number(m?.total_stock || 0);
+    existingHasHistory.value = Boolean(m?.has_stock_history);
     Object.assign(form, blank, m ? Object.fromEntries(Object.keys(blank).map((k) => [k, m[k] ?? blank[k]])) : {});
     show.value = true;
 }
@@ -152,6 +159,33 @@ async function save() {
             if (r.isConfirmed) router.push(`/purchases/create?medicine=${data.data.id}`);
         } else notify(data.message);
     } catch (e) { /* shown */ } finally { saving.value = false; }
+}
+
+
+async function convertLegacyStock(m) {
+    const mode = await Swal.fire({
+        icon: 'warning', title: 'How is the existing stock recorded?',
+        text: 'Choose carefully. This determines whether existing stock, batches, prices, sales, returns and stock ledger quantities must be converted.',
+        input: 'radio', inputOptions: { pack: 'As packs / strips (multiply quantities by pack size)', unit: 'Already as individual tablets / units (keep quantities unchanged)' },
+        inputValidator: (value) => (!value ? 'Select how the existing quantities are stored.' : undefined),
+        showCancelButton: true, confirmButtonText: 'Continue', confirmButtonColor: '#b7791f',
+    });
+    if (!mode.isConfirmed) return;
+    const defaultPack = Math.max(2, Number(m.pack_size || 10));
+    const result = await Swal.fire({
+        icon: 'warning', title: 'Confirm pack size',
+        text: `Medicine: ${m.display_name}. Existing stock: ${m.total_stock} ${m.unit}. This conversion is recorded in the audit trail and cannot be undone.`,
+        input: 'number', inputLabel: 'Individual units in one pack', inputValue: defaultPack,
+        inputAttributes: { min: 2, step: 1 }, showCancelButton: true,
+        confirmButtonText: 'Apply conversion', confirmButtonColor: '#b7791f',
+        inputValidator: (value) => (!Number.isInteger(Number(value)) || Number(value) < 2 ? 'Enter a whole number of at least 2.' : undefined),
+    });
+    if (!result.isConfirmed) return;
+    try {
+        const { data } = await api.post(`/medicines/${m.id}/convert-stock-units`, { pack_size: Number(result.value), legacy_stock_unit: mode.value, confirm_legacy_pack_stock: true });
+        await Swal.fire({ icon: 'success', title: 'Unit conversion configured', text: data.message });
+        table.value.reload(); stockChanged();
+    } catch (e) { /* shown */ }
 }
 
 async function downloadCsvTemplate() {

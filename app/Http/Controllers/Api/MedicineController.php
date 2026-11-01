@@ -22,6 +22,7 @@ class MedicineController extends Controller
 
         $q = Medicine::query()
             ->with(['category:id,name', 'manufacturer:id,name'])
+            ->withExists('movements as has_stock_history')
             ->withMin(['batches as nearest_expiry' => fn ($b) => $b->where('quantity', '>', 0)], 'expiry_date')
             ->search($request->search)
             ->when($request->category_id, fn ($q, $v) => $q->where('category_id', $v))
@@ -136,8 +137,13 @@ class MedicineController extends Controller
                     'reorder_level' => max(0, (int) ($row['reorder_level'] ?? 10)),
                     'rack' => ! empty($row['rack']) ? mb_substr($row['rack'], 0, 50) : null,
                     'is_active' => true,
+                    'stock_units_are_base' => true,
                 ];
                 if ($medicine) {
+                    unset($payload['stock_units_are_base']);
+                    if (((int) $medicine->total_stock > 0 || $medicine->movements()->exists()) && isset($row['pack_size']) && $row['pack_size'] !== '' && (int) $payload['pack_size'] !== (int) $medicine->pack_size) {
+                        $skipped++; $errors[] = "Row {$rowNo}: pack_size cannot be changed while {$medicine->name} has stock."; continue;
+                    }
                     // Blank/missing CSV columns must never erase existing master data.
                     foreach (['generic_name' => 'generic_name', 'strength' => 'strength', 'category_id' => 'category',
                         'manufacturer_id' => 'manufacturer', 'barcode' => 'barcode', 'rack' => 'rack',
@@ -146,6 +152,7 @@ class MedicineController extends Controller
                     }
                     if (! is_numeric($row['purchase_price'] ?? null)) unset($payload['purchase_price']);
                     if (! is_numeric($row['sale_price'] ?? null)) unset($payload['sale_price']);
+                    if ((int) $medicine->total_stock === 0 && ! $medicine->movements()->exists()) $payload['stock_units_are_base'] = true;
                     $medicine->update($payload);
                 } else {
                     Medicine::create($payload);
@@ -163,6 +170,60 @@ class MedicineController extends Controller
         return response()->json(['message' => 'CSV import completed.', 'created' => $created, 'updated' => $updated, 'skipped' => $skipped, 'errors' => array_slice($errors, 0, 20)]);
     }
 
+
+    /** Convert legacy pack-based quantities and historical ledger values into base individual units. */
+    public function convertStockUnits(Request $request, Medicine $medicine)
+    {
+        $data = $request->validate(['pack_size' => 'required|integer|min:2|max:100000', 'legacy_stock_unit' => 'required|in:pack,unit', 'confirm_legacy_pack_stock' => 'required|accepted']);
+        return DB::transaction(function () use ($request, $medicine, $data) {
+            $medicine = Medicine::lockForUpdate()->findOrFail($medicine->id);
+            if ($medicine->stock_units_are_base) return response()->json(['message' => 'This medicine is already maintained in individual units.'], 422);
+            $currentPackSize = max(1, (int) $medicine->pack_size);
+            if ($currentPackSize > 1 && (int) $data['pack_size'] !== $currentPackSize) {
+                return response()->json(['message' => 'This medicine already has a pack size. Use that same value to convert its legacy stock.'], 422);
+            }
+            $factor = $currentPackSize > 1 ? $currentPackSize : (int) $data['pack_size'];
+            $hasHistory = $medicine->movements()->exists() || DB::table('sale_items')->where('medicine_id', $medicine->id)->exists();
+            $needsConversion = (int) $medicine->total_stock > 0 || $hasHistory;
+            $oldStock = (int) $medicine->total_stock;
+
+            if ($needsConversion && $data['legacy_stock_unit'] === 'pack') {
+                DB::table('medicine_batches')->where('medicine_id', $medicine->id)->update([
+                    'quantity' => DB::raw('quantity * '.$factor), 'initial_quantity' => DB::raw('initial_quantity * '.$factor),
+                    'purchase_price' => DB::raw('purchase_price / '.$factor), 'sale_price' => DB::raw('sale_price / '.$factor),
+                ]);
+                DB::table('stock_movements')->where('medicine_id', $medicine->id)->update(['quantity' => DB::raw('quantity * '.$factor), 'balance_after' => DB::raw('balance_after * '.$factor)]);
+                DB::table('stock_adjustments')->where('medicine_id', $medicine->id)->update(['quantity' => DB::raw('quantity * '.$factor)]);
+                DB::table('sale_items')->where('medicine_id', $medicine->id)->update([
+                    'sale_quantity' => DB::raw('quantity'), 'sale_unit' => 'pack', 'pack_size' => $factor,
+                    'quantity' => DB::raw('quantity * '.$factor), 'returned_qty' => DB::raw('returned_qty * '.$factor),
+                    'price' => DB::raw('price / '.$factor), 'cost_price' => DB::raw('cost_price / '.$factor),
+                ]);
+                DB::table('sale_return_items')->where('medicine_id', $medicine->id)->update(['quantity' => DB::raw('quantity * '.$factor), 'price' => DB::raw('price / '.$factor)]);
+                DB::table('purchase_return_items')->where('medicine_id', $medicine->id)->update(['quantity' => DB::raw('quantity * '.$factor), 'price' => DB::raw('price / '.$factor)]);
+            } elseif ($data['legacy_stock_unit'] === 'unit') {
+                // Existing quantities/prices already represent individual units; only add pack metadata.
+                if ($needsConversion) DB::table('sale_items')->where('medicine_id', $medicine->id)->update([
+                    'sale_quantity' => DB::raw('quantity'), 'sale_unit' => 'unit', 'pack_size' => $factor,
+                ]);
+                $medicine->forceFill([
+                    'purchase_price' => round((float) $medicine->purchase_price * $factor, 2),
+                    'sale_price' => round((float) $medicine->sale_price * $factor, 2),
+                ]);
+            }
+
+            $medicine->forceFill(['pack_size' => $factor, 'stock_units_are_base' => true,
+                'total_stock' => $needsConversion && $data['legacy_stock_unit'] === 'pack' ? $oldStock * $factor : $oldStock,
+                'reorder_level' => $needsConversion && $data['legacy_stock_unit'] === 'pack' ? (int) $medicine->reorder_level * $factor : $medicine->reorder_level])->save();
+            \App\Models\AuditLog::create(['user_id' => $request->user()->id, 'action' => $needsConversion ? 'legacy_stock_converted_to_base_units' : 'pack_size_configured',
+                'subject_type' => Medicine::class, 'subject_id' => $medicine->id,
+                'old_values' => ['pack_size' => $currentPackSize, 'total_stock' => $oldStock],
+                'new_values' => ['pack_size' => $factor, 'total_stock' => $medicine->total_stock], 'ip_address' => $request->ip()]);
+            $message = $needsConversion && $data['legacy_stock_unit'] === 'pack' ? "Legacy stock and linked history converted: {$oldStock} packs = ".($oldStock * $factor).' individual units.' : ($needsConversion ? 'Existing stock was already in individual units. Pack metadata and selling prices were configured without changing quantities.' : 'Pack size configured. Future purchases will be converted into individual units.');
+            return response()->json(['message' => $message, 'data' => new MedicineResource($medicine->fresh())]);
+        });
+    }
+
     public function show(Medicine $medicine)
     {
         return new MedicineResource($medicine->load(['category:id,name', 'manufacturer:id,name']));
@@ -170,14 +231,19 @@ class MedicineController extends Controller
 
     public function store(MedicineRequest $request)
     {
-        $medicine = Medicine::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $medicine = Medicine::create($request->validated() + ['is_active' => $request->boolean('is_active', true), 'stock_units_are_base' => true]);
 
         return response()->json(['message' => 'Medicine added. Add stock via Purchase.', 'data' => new MedicineResource($medicine)], 201);
     }
 
     public function update(MedicineRequest $request, Medicine $medicine)
     {
-        $medicine->update($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        if (((int) $medicine->total_stock > 0 || $medicine->movements()->exists()) && (int) $request->input('pack_size') !== (int) $medicine->pack_size) {
+            return response()->json(['message' => 'Pack size cannot be changed while stock exists. Finish or adjust the current stock first to prevent inventory conversion errors.'], 422);
+        }
+        $payload = $request->validated() + ['is_active' => $request->boolean('is_active', true)];
+        if ((int) $medicine->total_stock === 0 && ! $medicine->movements()->exists()) $payload['stock_units_are_base'] = true;
+        $medicine->update($payload);
 
         return response()->json(['message' => 'Medicine updated.', 'data' => new MedicineResource($medicine)]);
     }

@@ -41,6 +41,9 @@ class StockService
     /** Stock OUT for sale – FEFO (first expiry first out), expired batches skipped */
     public function deductFefo(Medicine $medicine, int $qty, string $reference): array
     {
+        if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1) {
+            throw ValidationException::withMessages(['items' => "Convert legacy pack stock to individual units for {$medicine->display_name} before selling."]);
+        }
         $batches = $medicine->sellableBatches()->lockForUpdate()->get();
         $available = (int) $batches->sum('quantity');
 
@@ -73,6 +76,9 @@ class StockService
     public function moveBatch(MedicineBatch $batch, int $delta, string $type, string $reference, ?string $note = null): void
     {
         $medicine = Medicine::lockForUpdate()->findOrFail($batch->medicine_id);
+        if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1) {
+            throw ValidationException::withMessages(['quantity' => "Convert legacy pack stock to individual units for {$medicine->display_name} before changing stock."]);
+        }
 
         if ($delta < 0 && $batch->quantity < abs($delta)) {
             throw ValidationException::withMessages([

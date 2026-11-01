@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CashierSessionController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\LookupController;
@@ -34,6 +35,13 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
     // POS
     Route::get('pos/products', [PosController::class, 'products']);
     Route::post('pos/checkout', [PosController::class, 'checkout']);
+    Route::get('pos/scan/{barcode}', [PosController::class, 'scan'])->where('barcode', '.*');
+
+    // Cashier shift and till reconciliation
+    Route::get('cashier-session/current', [CashierSessionController::class, 'current']);
+    Route::post('cashier-session/open', [CashierSessionController::class, 'open']);
+    Route::post('cashier-session/transaction', [CashierSessionController::class, 'transaction']);
+    Route::post('cashier-session/close', [CashierSessionController::class, 'close']);
 
     // Medicines lookup (POS / returns)
     Route::get('medicines/search', [MedicineController::class, 'search']);
@@ -75,6 +83,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
 
     Route::get('medicines/{medicine}/movements', [MedicineController::class, 'movements']);
+    Route::post('medicines/{medicine}/convert-stock-units', [MedicineController::class, 'convertStockUnits']);
     Route::get('medicines/import-template', [MedicineController::class, 'downloadImportTemplate']);
     Route::post('medicines/import-csv', [MedicineController::class, 'importCsv']);
     Route::apiResource('medicines', MedicineController::class);
@@ -94,6 +103,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     Route::get('reports/summary', [ReportController::class, 'summary']);
     Route::get('reports/stock', [ReportController::class, 'stock']);
+    Route::get('reports/batch-profitability', [ReportController::class, 'batchProfitability']);
+    Route::get('audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
 
     Route::get('settings', [SettingController::class, 'index']);
     Route::put('settings', [SettingController::class, 'update']);

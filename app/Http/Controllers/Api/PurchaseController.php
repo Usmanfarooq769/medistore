@@ -63,15 +63,20 @@ class PurchaseController extends Controller
 
             foreach ($data['items'] as $row) {
                 $medicine = Medicine::lockForUpdate()->findOrFail($row['medicine_id']);
-                $qty = (int) $row['quantity'] + (int) ($row['bonus_qty'] ?? 0);
+                if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1 && ((int) $medicine->total_stock > 0 || $medicine->movements()->exists())) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Convert legacy stock to individual units for {$medicine->display_name} before recording another purchase."]);
+                }
+                if (! $medicine->stock_units_are_base) $medicine->forceFill(['stock_units_are_base' => true])->save();
+                $packSize = max(1, (int) ($medicine->pack_size ?? 1));
+                $qty = ((int) $row['quantity'] + (int) ($row['bonus_qty'] ?? 0)) * $packSize;
 
                 $batch = $this->stock->addBatch($medicine, [
                     'purchase_id'    => $purchase->id,
                     'supplier_id'    => $data['supplier_id'],
                     'batch_no'       => $row['batch_no'],
                     'expiry_date'    => $row['expiry_date'],
-                    'purchase_price' => $row['purchase_price'],
-                    'sale_price'     => $row['sale_price'],
+                    'purchase_price' => round(((float) $row['purchase_price'] * ((int) $row['quantity'])) / max(1, ((int) $row['quantity'] + (int) ($row['bonus_qty'] ?? 0))) / $packSize, 4),
+                    'sale_price'     => round((float) $row['sale_price'] / $packSize, 4),
                     'quantity'       => $qty,
                 ], $purchase->reference_no);
 

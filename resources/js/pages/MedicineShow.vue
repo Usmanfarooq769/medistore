@@ -8,9 +8,9 @@
                     <tr><th class="text-muted fw-normal">Company</th><td>{{ m.manufacturer || '—' }}</td></tr>
                     <tr><th class="text-muted fw-normal">Category</th><td>{{ m.category || '—' }}</td></tr>
                     <tr><th class="text-muted fw-normal">Barcode</th><td>{{ m.barcode || '—' }}</td></tr>
-                    <tr><th class="text-muted fw-normal">Price</th><td>{{ money(m.sale_price) }} <small class="text-muted">(cost {{ money(m.purchase_price) }})</small></td></tr>
+                    <tr><th class="text-muted fw-normal">Price / pack</th><td>{{ money(m.sale_price) }} <small class="text-muted">(cost {{ money(m.purchase_price) }})</small></td></tr>
                     <tr><th class="text-muted fw-normal">Rack</th><td>{{ m.rack || '—' }}</td></tr>
-                    <tr><th class="text-muted fw-normal">Total stock</th><td class="fw-bold" :class="m.is_low ? 'text-danger' : 'text-success'">{{ m.total_stock }} {{ m.unit }} <small class="text-muted fw-normal">(re-order at {{ m.reorder_level }})</small></td></tr>
+                    <tr><th class="text-muted fw-normal">Total stock</th><td class="fw-bold" :class="m.is_low ? 'text-danger' : 'text-success'">{{ m.total_stock }} individual units <small class="text-muted fw-normal">(re-order at {{ m.reorder_level }} units)</small></td></tr>
                 </table>
                 <div class="d-flex gap-2 mt-3">
                     <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-success btn-sm"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link>
@@ -18,7 +18,7 @@
                 </div>
             </div></div></div>
             <div class="col-lg-8"><div class="card h-100">
-                <div class="card-header fw-semibold">Batches in stock (sold first-expiry-first-out)</div>
+                <div class="card-header fw-semibold">Batches in stock (quantities and batch prices are per individual unit; FEFO)</div>
                 <div class="table-responsive"><table class="table table-sm table-hover mb-0">
                     <thead class="table-light"><tr><th>Batch</th><th>Expiry</th><th>Supplier</th><th>Cost</th><th>Sale</th><th>Qty left</th></tr></thead>
                     <tbody>

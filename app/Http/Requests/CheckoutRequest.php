@@ -17,6 +17,7 @@ class CheckoutRequest extends FormRequest
             'items'            => 'required|array|min:1',
             'items.*.id'       => 'required|integer|exists:medicines,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.sale_unit' => 'nullable|in:pack,unit',
             'items.*.price'    => 'nullable|numeric|min:0',
             'customer_id'      => 'nullable|exists:customers,id',
             'customer_name'    => 'nullable|string|max:150',

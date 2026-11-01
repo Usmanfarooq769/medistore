@@ -18,7 +18,7 @@
                 <tbody>
                     <tr v-for="i in s.items" :key="i.id">
                         <td>{{ i.medicine_name }}<div style="font-size:10px">B:{{ i.batch_no }} E:{{ i.expiry_date ? i.expiry_date.slice(5, 7) + '/' + i.expiry_date.slice(2, 4) : '' }}</div></td>
-                        <td class="text-center">{{ i.quantity }}</td><td class="text-end">{{ i.price.toFixed(2) }}</td><td class="text-end">{{ i.total.toFixed(2) }}</td>
+                        <td class="text-center">{{ Number(i.sale_quantity || i.quantity).toLocaleString() }} {{ i.sale_unit === 'pack' ? 'pack' : 'unit' }}</td><td class="text-end">{{ (i.price * (i.sale_unit === 'pack' ? (i.pack_size || 1) : 1)).toFixed(2) }}</td><td class="text-end">{{ i.total.toFixed(2) }}</td>
                     </tr>
                 </tbody>
             </table>

@@ -11,6 +11,8 @@ const routes = [
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
+    { path: '/cashier/closing', component: () => import('../pages/CashierClosing.vue'), meta: { title: 'Cashier Shift & Closing' } },
+    { path: '/reports/batch-profitability', component: () => import('../pages/reports/BatchProfitability.vue'), meta: { admin: true, title: 'Batch Profitability' } },
 
     // Stock in
     { path: '/purchases', component: () => import('../pages/Purchases.vue'), meta: { ...admin, title: 'Purchases (Stock In)' } },
@@ -46,6 +48,7 @@ const routes = [
 
     // System
     { path: '/users', component: () => import('../pages/Users.vue'), meta: { ...admin, title: 'Users' } },
+    { path: '/audit-logs', component: () => import('../pages/AuditLogs.vue'), meta: { ...admin, title: 'Audit Trail' } },
     { path: '/settings', component: () => import('../pages/Settings.vue'), meta: { ...admin, title: 'Settings' } },
 
     // Printing (no layout)
