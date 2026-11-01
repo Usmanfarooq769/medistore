@@ -19,7 +19,6 @@
 
             <div class="card">
                 <div class="card-header">
-                    <label class="form-label small mb-1">Add medicine (name / generic / scan barcode, Enter to add)</label><div class="small text-muted mb-2">Purchase quantities and prices are entered per pack. Stock is converted into individual tablets/units automatically.</div>
                     <Autocomplete url="/medicines/search" placeholder="Search medicine…" icon="bi-upc-scan" size="lg" empty-text="Not found – add it first in Medicines" @select="addRow">
                         <template #item="{ item }">
                             <div class="d-flex justify-content-between"><span><b>{{ item.display_name }}</b> <small class="text-muted">{{ item.generic_name }}</small></span>
@@ -68,7 +67,7 @@
                     <div class="d-flex justify-content-between mb-3"><span>Due (added to supplier)</span><b class="text-danger">{{ money(Math.max(total - (form.paid || 0), 0)) }}</b></div>
                     <input v-model="form.note" class="form-control form-control-sm mb-3" placeholder="Note (optional)">
                     <button class="btn btn-success w-100 btn-lg" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span><i v-else class="bi bi-check2-circle"></i> Save Purchase</button>
-                    <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> Saving creates batches, adds stock and updates the supplier balance.</div>
+                    
                 </div>
             </div>
         </div>

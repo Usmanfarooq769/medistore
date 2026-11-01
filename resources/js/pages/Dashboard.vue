@@ -3,7 +3,6 @@
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
             <div>
                 <h4 class="fw-bold mb-0">Hello, {{ auth.user?.name }} 👋</h4>
-                <small class="text-muted">Flow: <b>Supplier → Purchase (stock in) → POS sale → Receipt → Return → Reports</b></small>
             </div>
             <button class="btn btn-sm btn-light" @click="load"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
         </div>

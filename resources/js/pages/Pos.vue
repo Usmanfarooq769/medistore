@@ -31,11 +31,6 @@
                         <div class="small text-muted" style="font-size:.7rem"><span v-if="m.rack"><i class="bi bi-geo-alt"></i> {{ m.rack }} · </span>Exp {{ date(m.nearest_expiry) }}</div>
                     </div>
                 </div>
-                <div class="card-footer small text-muted d-flex flex-wrap gap-3 align-items-center">
-                    <span><kbd>F2</kbd> search</span><span><kbd>↑↓←→</kbd> select</span><span><kbd>Enter</kbd> add</span>
-                    <span><kbd>F4</kbd> hold</span><span><kbd>F8</kbd> clear</span><span><kbd>F9</kbd> pay</span>
-                    <button v-if="hasMore" class="btn btn-sm btn-light ms-auto" @click="loadProducts(false)">Load more</button>
-                </div>
             </div>
         </div>
 

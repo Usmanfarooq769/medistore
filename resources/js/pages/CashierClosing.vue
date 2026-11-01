@@ -1,11 +1,19 @@
 <template>
     <div class="row g-3">
-        <div class="col-lg-8">
+        <div :class="session ? 'col-lg-8' : 'col-lg-12'">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center"><div class="fw-semibold"><i class="bi bi-safe me-2"></i>Cashier shift</div><span class="badge" :class="session ? 'bg-success' : 'bg-secondary'">{{ session ? 'Shift open' : 'No open shift' }}</span></div>
                 <div class="card-body" v-if="!session">
                     <p class="text-muted">Start your shift by entering the cash float currently in the drawer.</p>
-                    <form class="row g-3" @submit.prevent="openShift"><div class="col-md-6"><label class="form-label">Opening cash</label><input v-model.number="openingCash" type="number" min="0" step="0.01" class="form-control" required></div><div class="col-12"><button class="btn btn-success" :disabled="busy">Open shift</button></div></form>
+                    <form class="row g-3" @submit.prevent="openShift">
+                        <div class="col-md-12">
+                            <label class="form-label">Opening cash</label>
+                            <input v-model.number="openingCash" type="number" min="0" step="0.01" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-success" :disabled="busy">Open shift</button>
+                        </div>
+                    </form>
                 </div>
                 <div class="card-body" v-else>
                     <div class="row g-3 mb-3">
@@ -23,7 +31,25 @@
                 </div>
             </div>
         </div>
-        <div class="col-lg-4" v-if="session"><div class="card"><div class="card-header fw-semibold">Shift overview</div><div class="card-body"><div class="d-flex justify-content-between mb-2"><span>Invoices</span><b>{{ session.invoice_count }}</b></div><div class="d-flex justify-content-between mb-2"><span>Card / online sales</span><b>{{ money(session.non_cash_sales) }}</b></div><div class="d-flex justify-content-between mb-2"><span>Credit sales</span><b>{{ money(session.credit_sales) }}</b></div><div class="d-flex justify-content-between mb-2"><span>Customer cash receipts</span><b>{{ money(session.customer_receipts) }}</b></div><div class="d-flex justify-content-between mb-2"><span>Cash refunds</span><b class="text-danger">{{ money(session.cash_refunds) }}</b></div><hr><div class="small text-muted">Started {{ new Date(session.opened_at).toLocaleString() }}</div><h6 class="mt-3">Cash movements</h6><div v-for="t in session.transactions" :key="t.id" class="d-flex justify-content-between small py-1 border-bottom"><span>{{ t.category }}</span><b :class="t.type === 'in' ? 'text-success' : 'text-danger'">{{ t.type === 'in' ? '+' : '-' }}{{ money(t.amount) }}</b></div><div v-if="!session.transactions?.length" class="text-muted small">No manual cash movements.</div></div></div></div>
+        <div class="col-lg-4" v-if="session">
+            <div class="card">
+                <div class="card-header fw-semibold">Shift overview</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2"><span>Invoices</span><b>{{ session.invoice_count }}</b></div>
+                    <div class="d-flex justify-content-between mb-2"><span>Card / online sales</span><b>{{ money(session.non_cash_sales) }}</b></div>
+                    <div class="d-flex justify-content-between mb-2"><span>Credit sales</span><b>{{ money(session.credit_sales) }}</b></div>
+                    <div class="d-flex justify-content-between mb-2"><span>Customer cash receipts</span><b>{{ money(session.customer_receipts) }}</b></div>
+                    <div class="d-flex justify-content-between mb-2"><span>Cash refunds</span><b class="text-danger">{{ money(session.cash_refunds) }}</b></div>
+                    <hr>
+                    <div class="small text-muted">Started {{ new Date(session.opened_at).toLocaleString() }}</div>
+                    <h6 class="mt-3">Cash movements</h6>
+                    <div v-for="t in session.transactions" :key="t.id" class="d-flex justify-content-between small py-1 border-bottom">
+                        <span>{{ t.category }}</span><b :class="t.type === 'in' ? 'text-success' : 'text-danger'">{{ t.type === 'in' ? '+' : '-' }}{{ money(t.amount) }}</b>
+                    </div
+                    ><div v-if="!session.transactions?.length" class="text-muted small">No manual cash movements.</div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 <script setup>
