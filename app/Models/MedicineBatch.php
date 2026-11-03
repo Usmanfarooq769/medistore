@@ -8,11 +8,12 @@ class MedicineBatch extends Model
 {
     protected $fillable = [
         'medicine_id', 'purchase_id', 'supplier_id', 'branch_id', 'batch_no', 'expiry_date',
-        'purchase_price', 'sale_price', 'initial_quantity', 'quantity',
+        'purchase_price', 'sale_price', 'initial_quantity', 'quantity', 'is_quarantined',
     ];
 
     protected $casts = [
         'expiry_date'    => 'date',
+        'is_quarantined' => 'boolean',
         'purchase_price' => 'decimal:4',
         'sale_price'     => 'decimal:4',
     ];

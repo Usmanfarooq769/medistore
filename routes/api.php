@@ -20,14 +20,16 @@ use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\StockAdjustmentController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\StageFourController;
+use App\Http\Controllers\Api\StageFiveController;
 use Illuminate\Support\Facades\Route;
 
 /* All routes are prefixed with /api (bootstrap/app.php) */
 
 Route::post('login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
-/* ---------------- Admin + Cashier ---------------- */
-Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
+/* ---------------- Admin + Branch Manager + Cashier ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->group(function () {
     Route::get('me', [AuthController::class, 'me']);
     Route::post('logout', [AuthController::class, 'logout']);
 
@@ -48,7 +50,7 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
     Route::get('medicines/search', [MedicineController::class, 'search']);
     Route::get('medicines/{medicine}/batches', [MedicineController::class, 'batches']);
 
-    // Prescriptions: cashiers can upload/view; only admin can approve/reject.
+    // Pharmacists, branch managers and cashiers can upload/view; qualified roles review.
     Route::get('tax-profiles', [\App\Http\Controllers\Api\TaxProfileController::class, 'index']);
     Route::get('promotions/active', [\App\Http\Controllers\Api\PromotionController::class, 'active']);
     Route::post('promotions/preview', [\App\Http\Controllers\Api\PromotionController::class, 'preview']);
@@ -83,14 +85,8 @@ Route::middleware(['auth:sanctum', 'role:admin,cashier'])->group(function () {
 /* ---------------- Admin only ---------------- */
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('dashboard', DashboardController::class);
-    Route::post('prescriptions/{prescription}/review', [PrescriptionController::class, 'review']);
 
     // Purchase orders and receiving workflow
-    Route::get('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'index']);
-    Route::post('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'store']);
-    Route::get('purchase-orders/{purchaseOrder}', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'show']);
-    Route::post('purchase-orders/{purchaseOrder}/review', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'approve']);
-    Route::post('purchase-orders/{purchaseOrder}/receive', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'receive']);
 
     // Branches and inter-branch transfers
     Route::get('branches', [\App\Http\Controllers\Api\BranchController::class, 'index']);
@@ -122,9 +118,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::apiResource('categories', CategoryController::class)->except('show');
     Route::apiResource('manufacturers', ManufacturerController::class)->except('show');
 
-    Route::get('suppliers/{supplier}/ledger', [SupplierController::class, 'ledger']);
-    Route::post('suppliers/{supplier}/payments', [SupplierController::class, 'payment']);
-    Route::apiResource('suppliers', SupplierController::class);
 
     Route::delete('customers/{customer}', [CustomerController::class, 'destroy']);
 
@@ -134,7 +127,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('medicines/import-csv', [MedicineController::class, 'importCsv']);
     Route::apiResource('medicines', MedicineController::class);
 
-    Route::apiResource('purchases', PurchaseController::class)->except('update');
 
     Route::delete('sales/{sale}', [SaleController::class, 'destroy']);
 
@@ -143,13 +135,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('purchase-returns', [PurchaseReturnController::class, 'store']);
     Route::get('purchase-returns/{purchaseReturn}', [PurchaseReturnController::class, 'show']);
 
-    Route::get('adjustments', [StockAdjustmentController::class, 'index']);
-    Route::post('adjustments', [StockAdjustmentController::class, 'store']);
-    Route::post('adjustments/write-off-expired', [StockAdjustmentController::class, 'writeOffExpired']);
 
-    Route::get('reports/summary', [ReportController::class, 'summary']);
-    Route::get('reports/stock', [ReportController::class, 'stock']);
-    Route::get('reports/batch-profitability', [ReportController::class, 'batchProfitability']);
     Route::get('audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
 
     Route::get('settings', [SettingController::class, 'index']);
@@ -157,3 +143,149 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     Route::apiResource('users', UserController::class)->except('show');
 });
+
+
+Route::post('prescriptions/{prescription}/review', [PrescriptionController::class, 'review'])->middleware(['auth:sanctum','role:admin,branch_manager,pharmacist']);
+
+
+/* ---------------- Branch manager operational permissions ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager'])->group(function () {
+    Route::get('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'index']);
+    Route::post('purchase-orders', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'store']);
+    Route::get('purchase-orders/{purchaseOrder}', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'show']);
+    Route::post('purchase-orders/{purchaseOrder}/review', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'approve']);
+    Route::post('purchase-orders/{purchaseOrder}/receive', [\App\Http\Controllers\Api\PurchaseOrderController::class, 'receive']);
+
+    Route::get('medicines', [MedicineController::class, 'index']);
+    Route::get('medicines/{medicine}', [MedicineController::class, 'show']);
+    Route::apiResource('purchases', PurchaseController::class)->except('update');
+    Route::get('suppliers/{supplier}/ledger', [SupplierController::class, 'ledger']);
+    Route::post('suppliers/{supplier}/payments', [SupplierController::class, 'payment']);
+    Route::apiResource('suppliers', SupplierController::class);
+    Route::get('adjustments', [StockAdjustmentController::class, 'index']);
+    Route::post('adjustments', [StockAdjustmentController::class, 'store']);
+    Route::post('adjustments/write-off-expired', [StockAdjustmentController::class, 'writeOffExpired']);
+    Route::get('reports/summary', [ReportController::class, 'summary']);
+    Route::get('reports/stock', [ReportController::class, 'stock']);
+    Route::get('reports/batch-profitability', [ReportController::class, 'batchProfitability']);
+});
+
+/* ---------------- Stage 4: chain operations, clinics, schemes, insurance, analytics, mobile and AI ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('stage4')->group(function () {
+    // Mobile uses the same authenticated branch-aware workflows as the web app.
+    Route::get('mobile/overview', [StageFourController::class, 'mobileOverview']);
+    Route::post('ai/ask', [StageFourController::class, 'aiAssistant'])->middleware('throttle:10,1');
+
+    Route::get('doctors', [StageFourController::class, 'doctors']);
+    Route::get('clinics', [StageFourController::class, 'clinics']);
+    Route::get('referrals', [StageFourController::class, 'referrals']);
+    Route::post('referrals', [StageFourController::class, 'createReferral']);
+    Route::patch('prescriptions/{prescription}/doctor', [StageFourController::class, 'linkPrescription']);
+
+    Route::get('expiry-claims', [StageFourController::class, 'expiryClaims']);
+    Route::post('expiry-claims', [StageFourController::class, 'createExpiryClaim']);
+    Route::post('expiry-claims/{claim}/submit', [StageFourController::class, 'submitExpiryClaim']);
+
+    Route::get('insurance-claims', [StageFourController::class, 'insuranceClaims']);
+    Route::post('insurance-claims', [StageFourController::class, 'createInsuranceClaim']);
+    Route::post('insurance-claims/{claim}/submit', [StageFourController::class, 'submitInsuranceClaim']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager'])->prefix('stage4')->group(function () {
+    Route::get('lookups', [StageFourController::class, 'lookups']);
+    Route::post('doctors', [StageFourController::class, 'saveDoctor']);
+    Route::put('doctors/{doctor}', [StageFourController::class, 'saveDoctor']);
+    Route::delete('doctors/{doctor}', [StageFourController::class, 'deleteDoctor']);
+    Route::post('clinics', [StageFourController::class, 'saveClinic']);
+    Route::put('clinics/{clinic}', [StageFourController::class, 'saveClinic']);
+
+    Route::get('schemes', [StageFourController::class, 'schemes']);
+    Route::post('schemes', [StageFourController::class, 'saveScheme']);
+    Route::put('schemes/{scheme}', [StageFourController::class, 'saveScheme']);
+    Route::post('schemes/preview', [StageFourController::class, 'schemePreview']);
+    Route::post('schemes/redeem', [StageFourController::class, 'redeemScheme']);
+    Route::get('schemes/profitability', [StageFourController::class, 'schemeProfitability']);
+
+    Route::post('expiry-claims/{claim}/review', [StageFourController::class, 'reviewExpiryClaim']);
+    Route::post('expiry-claims/{claim}/credit', [StageFourController::class, 'creditExpiryClaim']);
+    Route::get('insurance-providers', [StageFourController::class, 'insuranceProviders']);
+    Route::post('insurance-providers', [StageFourController::class, 'saveInsuranceProvider']);
+    Route::put('insurance-providers/{provider}', [StageFourController::class, 'saveInsuranceProvider']);
+    Route::post('insurance-plans', [StageFourController::class, 'saveInsurancePlan']);
+    Route::put('insurance-plans/{plan}', [StageFourController::class, 'saveInsurancePlan']);
+    Route::post('insurance-coverages', [StageFourController::class, 'saveInsuranceCoverage']);
+    Route::post('insurance-claims/{claim}/review', [StageFourController::class, 'reviewInsuranceClaim']);
+    Route::post('insurance-claims/{claim}/settle', [StageFourController::class, 'settleInsuranceClaim']);
+
+    Route::get('analytics', [StageFourController::class, 'analytics']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('stage4')->group(function () {
+    Route::get('chain/overview', [StageFourController::class, 'chainOverview']);
+});
+
+
+/* ---------------- Stage 5.1–5.4: enterprise pharmacy operations ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('stage5')->group(function () {
+    Route::get('overview', [StageFiveController::class, 'overview']);
+    Route::post('refills', [StageFiveController::class, 'requestRefill']);
+    Route::get('push-subscriptions', fn () => response()->json(['supported' => true]));
+    Route::post('push-subscriptions', [StageFiveController::class, 'registerPushSubscription']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager'])->prefix('stage5')->group(function () {
+    Route::get('lookups', [StageFiveController::class, 'lookups']);
+    // 5.1 Central procurement and warehouse
+    Route::get('quotations', [StageFiveController::class, 'quotations']);
+    Route::get('quotations/comparison', [StageFiveController::class, 'quotationComparison']);
+    Route::post('quotations', [StageFiveController::class, 'storeQuotation']);
+    Route::post('quotations/{quotation}/review', [StageFiveController::class, 'quotationReview']);
+    Route::post('quotations/{quotation}/convert', [StageFiveController::class, 'quotationConvert']);
+    Route::get('warehouse/locations', [StageFiveController::class, 'locations']);
+    Route::post('warehouse/locations', [StageFiveController::class, 'storeLocation']);
+    Route::post('warehouse/allocate', [StageFiveController::class, 'assignBatchLocation']);
+    Route::get('warehouse/counts', [StageFiveController::class, 'stockCounts']);
+    Route::post('warehouse/counts', [StageFiveController::class, 'storeStockCount']);
+    Route::post('warehouse/counts/{count}/review', [StageFiveController::class, 'reviewStockCount']);
+
+    // 5.2 Hospitals, clinics and healthcare integrations
+    Route::get('facilities', [StageFiveController::class, 'facilities']);
+    Route::get('facilities/{facility}/api-tokens', [StageFiveController::class, 'facilityTokens']);
+    Route::post('facilities/{facility}/api-token', [StageFiveController::class, 'createFacilityToken']);
+    Route::delete('facilities/{facility}/api-tokens/{token}', [StageFiveController::class, 'revokeFacilityToken']);
+    Route::post('facilities', [StageFiveController::class, 'saveFacility']);
+    Route::put('facilities/{facility}', [StageFiveController::class, 'saveFacility']);
+
+    // 5.3 Insurance administration, recalls and compliance
+    Route::get('insurance/eligibility', [StageFiveController::class, 'eligibilityChecks']);
+    Route::post('insurance/eligibility', [StageFiveController::class, 'checkEligibility']);
+    Route::get('insurance/claims/{claim}/events', [StageFiveController::class, 'claimEvents']);
+    Route::post('insurance/claims/{claim}/events', [StageFiveController::class, 'recordClaimEvent']);
+    Route::patch('compliance/medicines/{medicine}/controlled', [StageFiveController::class, 'setControlledMedicine']);
+    Route::get('compliance/recalls', [StageFiveController::class, 'recalls']);
+    Route::get('compliance/recall-items', [StageFiveController::class, 'recallItems']);
+    Route::post('compliance/recalls', [StageFiveController::class, 'createRecall']);
+    Route::post('compliance/recalls/{recall}/close', [StageFiveController::class, 'closeRecall']);
+    Route::post('compliance/recall-items/{item}/release', [StageFiveController::class, 'releaseRecallBatch']);
+
+    // 5.4 Customer engagement and business intelligence
+    Route::patch('customers/{customer}/marketing-consent', [StageFiveController::class, 'setCustomerMarketingConsent']);
+    Route::get('campaigns', [StageFiveController::class, 'campaigns']);
+    Route::post('campaigns', [StageFiveController::class, 'saveCampaign']);
+    Route::post('campaigns/{campaign}/send', [StageFiveController::class, 'sendCampaign'])->middleware('throttle:5,1');
+    Route::get('analytics/seasonality', [StageFiveController::class, 'seasonality']);
+    Route::put('campaigns/{campaign}', [StageFiveController::class, 'saveCampaign']);
+    Route::get('reminders', [StageFiveController::class, 'reminders']);
+    Route::post('reminders', [StageFiveController::class, 'createReminder']);
+    Route::get('analytics/forecast', [StageFiveController::class, 'forecast']);
+    Route::post('analytics/forecast/save', [StageFiveController::class, 'saveForecast']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist'])->prefix('stage5')->group(function () {
+    Route::get('compliance/controlled-register', [StageFiveController::class, 'controlledRegister']);
+    Route::post('compliance/controlled-register', [StageFiveController::class, 'recordControlledMovement']);
+    Route::get('refills', [StageFiveController::class, 'refills']);
+    Route::post('refills/{refill}/review', [StageFiveController::class, 'reviewRefill']);
+});
+
+Route::post('integrations/facilities/{facility}/prescriptions', [StageFiveController::class, 'receiveFacilityPrescription'])->middleware('throttle:30,1');

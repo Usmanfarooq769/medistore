@@ -34,6 +34,13 @@ return [
         'graph_version' => env('WHATSAPP_GRAPH_VERSION', 'v22.0'),
         'language' => env('WHATSAPP_TEMPLATE_LANGUAGE', 'en_US'),
         'alert_template' => env('WHATSAPP_ALERT_TEMPLATE'),
+        'campaign_template' => env('WHATSAPP_CAMPAIGN_TEMPLATE'),
+        'refill_template' => env('WHATSAPP_REFILL_TEMPLATE'),
+    ],
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
     ],
 
     'slack' => [

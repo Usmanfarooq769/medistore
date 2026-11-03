@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Supplier;
+use App\Models\SupplierCreditNote;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Services\BranchContext;
@@ -36,6 +37,7 @@ class SupplierController extends Controller
                 'purchases' => (float) Purchase::where('supplier_id', $supplier->id)->sum('total'),
                 'paid'      => (float) Payment::where('party_type', 'supplier')->where('party_id', $supplier->id)->sum('amount'),
                 'returns'   => (float) PurchaseReturn::where('supplier_id', $supplier->id)->sum('total'),
+                'expiry_credits' => (float) SupplierCreditNote::where('supplier_id',$supplier->id)->sum('amount'),
             ],
         ]);
     }
@@ -74,8 +76,10 @@ class SupplierController extends Controller
             ->selectRaw("id, payment_date as date, 'payment' as type, method as ref, note, 0 as debit, amount as credit");
         $returns = PurchaseReturn::where('supplier_id', $supplier->id)->where('refund_type', 'adjust_balance')
             ->selectRaw("id, return_date as date, 'return' as type, return_no as ref, reason as note, 0 as debit, total as credit");
+        $expiryCredits = SupplierCreditNote::where('supplier_id',$supplier->id)
+            ->selectRaw("id, credit_date as date, 'expiry_credit' as type, credit_note_no as ref, reference as note, 0 as debit, amount as credit");
 
-        return $purchases->unionAll($payments)->unionAll($returns)
+        return $purchases->unionAll($payments)->unionAll($returns)->unionAll($expiryCredits)
             ->orderByDesc('date')->orderByDesc('id')->paginate(20);
     }
 

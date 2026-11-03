@@ -8,6 +8,7 @@ use App\Http\Resources\PurchaseResource;
 use App\Models\Medicine;
 use App\Models\Payment;
 use App\Models\Purchase;
+use App\Models\ManufacturerScheme;
 use App\Models\Supplier;
 use App\Services\StockService;
 use App\Services\BranchContext;
@@ -71,7 +72,33 @@ class PurchaseController extends Controller
                 }
                 if (! $medicine->stock_units_are_base) $medicine->forceFill(['stock_units_are_base' => true])->save();
                 $packSize = max(1, (int) ($medicine->pack_size ?? 1));
-                $qty = ((int) $row['quantity'] + (int) ($row['bonus_qty'] ?? 0)) * $packSize;
+                $bonusQty = (int) ($row['bonus_qty'] ?? 0);
+                $scheme = null;
+                if (!empty($row['scheme_id'])) {
+                    $scheme = ManufacturerScheme::whereKey($row['scheme_id'])->lockForUpdate()->firstOrFail();
+                    if (!$scheme->is_active || !$scheme->valid_from->lte(today()) || !$scheme->valid_to->gte(today())) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Scheme {$scheme->name} is not active today."]);
+                    }
+                    if ($scheme->scheme_type !== 'buy_x_get_y') {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Only Buy X Get Y schemes can be applied directly to purchase stock.']);
+                    }
+                    if ($scheme->medicine_id && (int)$scheme->medicine_id !== (int)$medicine->id) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Scheme {$scheme->name} does not apply to {$medicine->name}."]);
+                    }
+                    if ($scheme->supplier_id && (int)$scheme->supplier_id !== (int)$data['supplier_id']) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Scheme {$scheme->name} is restricted to another supplier."]);
+                    }
+                    if ($scheme->manufacturer_id && (int)$scheme->manufacturer_id !== (int)$medicine->manufacturer_id) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Scheme {$scheme->name} does not match this medicine manufacturer."]);
+                    }
+                    if ($scheme->branch_id && (int)$scheme->branch_id !== BranchContext::id()) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => "Scheme {$scheme->name} is not available for this branch."]);
+                    }
+                    $schemeFree = intdiv((int)$row['quantity'], max(1,(int)$scheme->buy_quantity)) * (int)$scheme->free_quantity;
+                    if ($scheme->max_free_quantity) $schemeFree = min($schemeFree,(int)$scheme->max_free_quantity);
+                    $bonusQty += $schemeFree;
+                }
+                $qty = ((int) $row['quantity'] + $bonusQty) * $packSize;
 
                 $batch = $this->stock->addBatch($medicine, [
                     'purchase_id'    => $purchase->id,
@@ -79,7 +106,7 @@ class PurchaseController extends Controller
                     'supplier_id'    => $data['supplier_id'],
                     'batch_no'       => $row['batch_no'],
                     'expiry_date'    => $row['expiry_date'],
-                    'purchase_price' => round(((float) $row['purchase_price'] * ((int) $row['quantity'])) / max(1, ((int) $row['quantity'] + (int) ($row['bonus_qty'] ?? 0))) / $packSize, 4),
+                    'purchase_price' => round(((float) $row['purchase_price'] * ((int) $row['quantity'])) / max(1, ((int) $row['quantity'] + $bonusQty)) / $packSize, 4),
                     'sale_price'     => round((float) $row['sale_price'] / $packSize, 4),
                     'quantity'       => $qty,
                 ], $purchase->reference_no);
@@ -90,11 +117,23 @@ class PurchaseController extends Controller
                     'batch_no'          => $row['batch_no'],
                     'expiry_date'       => $row['expiry_date'],
                     'quantity'          => $row['quantity'],
-                    'bonus_qty'         => $row['bonus_qty'] ?? 0,
+                    'bonus_qty'         => $bonusQty,
                     'purchase_price'    => $row['purchase_price'],
                     'sale_price'        => $row['sale_price'],
                     'total'             => round($row['quantity'] * $row['purchase_price'], 2),
+                    'scheme_id'         => $scheme?->id,
                 ]);
+
+                if ($scheme && $bonusQty > (int)($row['bonus_qty'] ?? 0)) {
+                    $schemeFree = $bonusQty - (int)($row['bonus_qty'] ?? 0);
+                    DB::table('manufacturer_scheme_redemptions')->insert([
+                        'scheme_id' => $scheme->id, 'purchase_id' => $purchase->id, 'medicine_id' => $medicine->id,
+                        'branch_id' => BranchContext::id(), 'paid_quantity' => (int)$row['quantity'], 'free_quantity' => $schemeFree,
+                        'purchase_value' => round((int)$row['quantity'] * (float)$row['purchase_price'], 2),
+                        'estimated_saving' => round($schemeFree * (float)$row['purchase_price'], 2),
+                        'redeemed_at' => $data['purchase_date'], 'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
 
                 $medicine->forceFill(['purchase_price' => $row['purchase_price'], 'sale_price' => $row['sale_price']])->saveQuietly();
             }
@@ -144,6 +183,7 @@ class PurchaseController extends Controller
             }
             Supplier::whereKey($purchase->supplier_id)->decrement('balance', (float) $purchase->due);
             Payment::where('purchase_id', $purchase->id)->delete();
+            if (\Illuminate\Support\Facades\Schema::hasTable('manufacturer_scheme_redemptions')) DB::table('manufacturer_scheme_redemptions')->where('purchase_id',$purchase->id)->delete();
             $purchase->delete();
         });
 

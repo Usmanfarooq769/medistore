@@ -28,6 +28,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.expiry_date'    => 'required|date|after:today',
             'items.*.quantity'       => 'required|integer|min:1',
             'items.*.bonus_qty'      => 'nullable|integer|min:0',
+            'items.*.scheme_id'      => 'nullable|exists:manufacturer_schemes,id',
             'items.*.purchase_price' => 'required|numeric|min:0',
             'items.*.sale_price'     => 'required|numeric|min:0',
         ];

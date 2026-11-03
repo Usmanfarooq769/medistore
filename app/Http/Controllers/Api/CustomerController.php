@@ -124,8 +124,18 @@ class CustomerController extends Controller
             'phone'   => ['nullable', 'string', 'max:30', Rule::unique('customers', 'phone')->ignore($id)],
             'address' => 'nullable|string|max:255',
             'credit_limit' => 'nullable|numeric|min:0|max:999999999',
+            'insurance_provider_id' => 'nullable|exists:insurance_providers,id',
+            'insurance_plan_id' => 'nullable|exists:insurance_plans,id',
+            'insurance_member_no' => 'nullable|string|max:100',
         ]);
         if (! auth()->user()?->isAdmin()) unset($validated['credit_limit']);
+        if (! in_array(auth()->user()?->role, ['admin','branch_manager'], true)) unset($validated['insurance_provider_id'], $validated['insurance_plan_id'], $validated['insurance_member_no']);
+        if (!empty($validated['insurance_plan_id']) && empty($validated['insurance_provider_id'])) {
+            abort(422, 'Select the insurance provider before assigning a plan.');
+        }
+        if (!empty($validated['insurance_plan_id']) && !empty($validated['insurance_provider_id'])) {
+            abort_unless(\App\Models\InsurancePlan::whereKey($validated['insurance_plan_id'])->where('provider_id',$validated['insurance_provider_id'])->exists(), 422, 'Selected insurance plan does not belong to this provider.');
+        }
         return $validated;
     }
 }

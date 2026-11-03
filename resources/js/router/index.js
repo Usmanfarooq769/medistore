@@ -10,9 +10,12 @@ const routes = [
     { path: '/', component: Blank },
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
+    { path: '/stage4', component: () => import('../pages/StageFour.vue'), meta: { title: 'Stage 4 Operations', stage4: true } },
+    { path: '/stage5', component: () => import('../pages/StageFive.vue'), meta: { title: 'Stage 5 Enterprise Operations', stage5: true } },
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
+    { path: '/mobile', component: () => import('../pages/MobileHome.vue'), meta: { title: 'Mobile Dashboard' } },
     { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
-    { path: '/purchase-orders', component: () => import('../pages/PurchaseOrders.vue'), meta: { ...admin, title: 'Purchase Orders' } },
+    { path: '/purchase-orders', component: () => import('../pages/PurchaseOrders.vue'), meta: { manager: true, title: 'Purchase Orders' } },
     { path: '/prescriptions', component: () => import('../pages/Prescriptions.vue'), meta: { title: 'Prescriptions' } },
     { path: '/branches', component: () => import('../pages/Branches.vue'), meta: { ...admin, title: 'Branches & Transfers' } },
     { path: '/finance', component: () => import('../pages/Finance.vue'), meta: { ...admin, title: 'Finance & Accounting' } },
@@ -20,21 +23,21 @@ const routes = [
     { path: '/reports/reorder-suggestions', component: () => import('../pages/ReorderSuggestions.vue'), meta: { ...admin, title: 'Smart Reorder Suggestions' } },
     { path: '/reports/customer-aging', component: () => import('../pages/CustomerAging.vue'), meta: { ...admin, title: 'Customer Receivables Ageing' } },
     { path: '/cashier/closing', component: () => import('../pages/CashierClosing.vue'), meta: { title: 'Cashier Shift & Closing' } },
-    { path: '/reports/batch-profitability', component: () => import('../pages/reports/BatchProfitability.vue'), meta: { admin: true, title: 'Batch Profitability' } },
+    { path: '/reports/batch-profitability', component: () => import('../pages/reports/BatchProfitability.vue'), meta: { manager: true, title: 'Batch Profitability' } },
 
     // Stock in
-    { path: '/purchases', component: () => import('../pages/Purchases.vue'), meta: { ...admin, title: 'Purchases (Stock In)' } },
-    { path: '/purchases/create', component: () => import('../pages/PurchaseCreate.vue'), meta: { ...admin, title: 'New Purchase' } },
-    { path: '/purchases/:id', component: () => import('../pages/PurchaseShow.vue'), meta: { ...admin, title: 'Purchase' } },
-    { path: '/suppliers', component: () => import('../pages/Suppliers.vue'), meta: { ...admin, title: 'Suppliers' } },
-    { path: '/suppliers/:id', component: () => import('../pages/SupplierShow.vue'), meta: { ...admin, title: 'Supplier Ledger' } },
+    { path: '/purchases', component: () => import('../pages/Purchases.vue'), meta: { manager: true, title: 'Purchases (Stock In)' } },
+    { path: '/purchases/create', component: () => import('../pages/PurchaseCreate.vue'), meta: { manager: true, title: 'New Purchase' } },
+    { path: '/purchases/:id', component: () => import('../pages/PurchaseShow.vue'), meta: { manager: true, title: 'Purchase' } },
+    { path: '/suppliers', component: () => import('../pages/Suppliers.vue'), meta: { manager: true, title: 'Suppliers' } },
+    { path: '/suppliers/:id', component: () => import('../pages/SupplierShow.vue'), meta: { manager: true, title: 'Supplier Ledger' } },
 
     // Inventory
     { path: '/medicines', component: () => import('../pages/Medicines.vue'), meta: { ...admin, title: 'Medicines' } },
     { path: '/medicines/:id', component: () => import('../pages/MedicineShow.vue'), meta: { ...admin, title: 'Stock Card' } },
     { path: '/categories', component: () => import('../pages/Categories.vue'), meta: { ...admin, title: 'Categories' } },
     { path: '/manufacturers', component: () => import('../pages/Manufacturers.vue'), meta: { ...admin, title: 'Companies' } },
-    { path: '/adjustments', component: () => import('../pages/Adjustments.vue'), meta: { ...admin, title: 'Stock Adjustment' } },
+    { path: '/adjustments', component: () => import('../pages/Adjustments.vue'), meta: { manager: true, title: 'Stock Adjustment' } },
 
     // Sales
     { path: '/sales', component: () => import('../pages/Sales.vue'), meta: { title: 'Sales / Invoices' } },
@@ -51,8 +54,8 @@ const routes = [
     { path: '/alerts/low-stock', component: () => import('../pages/LowStock.vue'), meta: { title: 'Low Stock' } },
     { path: '/alerts/expiry', component: () => import('../pages/Expiry.vue'), meta: { title: 'Expiry Alert' } },
     { path: '/reports/daily', component: () => import('../pages/reports/Daily.vue'), meta: { title: 'Daily Closing' } },
-    { path: '/reports/summary', component: () => import('../pages/reports/Summary.vue'), meta: { ...admin, title: 'Sales & Profit' } },
-    { path: '/reports/stock', component: () => import('../pages/reports/Stock.vue'), meta: { ...admin, title: 'Stock Report' } },
+    { path: '/reports/summary', component: () => import('../pages/reports/Summary.vue'), meta: { manager: true, title: 'Sales & Profit' } },
+    { path: '/reports/stock', component: () => import('../pages/reports/Stock.vue'), meta: { manager: true, title: 'Stock Report' } },
 
     // System
     { path: '/users', component: () => import('../pages/Users.vue'), meta: { ...admin, title: 'Users' } },
@@ -82,8 +85,11 @@ router.beforeEach(async (to) => {
         try { await auth.fetchMe(); } catch (e) { auth.clear(); return '/login'; }
     }
 
-    if (to.path === '/') return auth.isAdmin ? '/dashboard' : '/pos';
+    if (to.path === '/') return auth.isAdmin ? '/dashboard' : (['branch_manager','pharmacist'].includes(auth.user?.role) ? '/mobile' : '/pos');
     if (to.meta.admin && !auth.isAdmin) return '/pos';
+    if (to.meta.stage4 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
+    if (to.meta.stage5 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
+    if (to.meta.manager && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     return true;
 });
 

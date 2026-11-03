@@ -14,3 +14,8 @@ app.use(router);
 
 // mount after first navigation (auth check) => no flicker
 router.isReady().then(() => app.mount('#app'));
+
+// Installable mobile web app shell. Authenticated API responses are never cached.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

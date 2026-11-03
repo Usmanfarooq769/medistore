@@ -8,7 +8,7 @@ class PurchaseItem extends Model
 {
     protected $fillable = [
         'purchase_id', 'medicine_id', 'medicine_batch_id', 'batch_no', 'expiry_date',
-        'quantity', 'bonus_qty', 'purchase_price', 'sale_price', 'total',
+        'quantity', 'bonus_qty', 'purchase_price', 'sale_price', 'total', 'scheme_id',
     ];
 
     protected $casts = ['expiry_date' => 'date'];

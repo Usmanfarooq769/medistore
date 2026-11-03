@@ -14,3 +14,6 @@ Schedule::command('store:daily-report')->dailyAt('23:59')->withoutOverlapping();
 // Daily WhatsApp stock digest and encrypted off-site database backup.
 Schedule::command('store:whatsapp-stock-alerts')->dailyAt('09:00')->withoutOverlapping();
 Schedule::command('store:backup-cloud')->dailyAt('02:00')->withoutOverlapping();
+
+// Send due medicine refill reminders to customers who explicitly opted in.
+Schedule::command('store:send-refill-reminders')->dailyAt('10:00')->withoutOverlapping();

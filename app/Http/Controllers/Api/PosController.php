@@ -202,6 +202,19 @@ class PosController extends Controller
                 'loyalty_points_redeemed' => $redeemPoints,
             ]);
 
+            if (\Illuminate\Support\Facades\Schema::hasTable('controlled_medicine_register')) {
+                $controlledItems = DB::table('sale_items as si')->join('medicines as m','m.id','=','si.medicine_id')
+                    ->where('si.sale_id',$sale->id)->where('m.requires_controlled_tracking',true)->select('si.*')->get();
+                foreach ($controlledItems as $controlledItem) {
+                    DB::table('controlled_medicine_register')->insert([
+                        'branch_id'=>BranchContext::id(),'medicine_id'=>$controlledItem->medicine_id,'batch_id'=>$controlledItem->medicine_batch_id,
+                        'transaction_type'=>'dispense','quantity_change'=>-((int)$controlledItem->quantity),'reference_no'=>$invoice,
+                        'customer_id'=>$customer?->id,'prescription_id'=>$prescription?->id,'reason'=>'Dispensed on POS invoice '.$invoice,
+                        'recorded_by'=>$user->id,'recorded_at'=>now(),'created_at'=>now(),'updated_at'=>now(),
+                    ]);
+                }
+            }
+
             if ($due > 0) {
                 $customer->increment('balance', $due);
             }
@@ -221,7 +234,15 @@ class PosController extends Controller
                 $sale->update(['loyalty_points_earned' => $earnedPoints]);
                 LoyaltyTransaction::create(['customer_id' => $customer->id, 'sale_id' => $sale->id, 'user_id' => $user->id, 'type' => 'earned', 'points' => $earnedPoints, 'balance_after' => $balanceAfter, 'note' => 'Earned on invoice ' . $invoice]);
             }
-            if ($prescription) $prescription->update(['status' => 'dispensed']);
+            if ($prescription) {
+                $prescription->update(['status' => 'dispensed']);
+                if (\Illuminate\Support\Facades\Schema::hasTable('prescription_refills')) {
+                    DB::table('prescription_refills')->where('approved_prescription_id',$prescription->id)->where('status','approved')->update(['status'=>'dispensed','updated_at'=>now()]);
+                }
+                if (\Illuminate\Support\Facades\Schema::hasTable('prescription_events')) {
+                    DB::table('prescription_events')->insert(['prescription_id'=>$prescription->id,'event'=>'dispensed_on_pos','notes'=>'Dispensed on invoice '.$invoice,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);
+                }
+            }
             app(JournalPostingService::class)->postSale($sale->load('items'));
 
             return $sale;

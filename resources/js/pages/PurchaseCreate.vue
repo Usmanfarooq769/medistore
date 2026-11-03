@@ -30,7 +30,7 @@
                     <table class="table table-sm align-middle mb-0">
                         <thead class="table-light"><tr>
                             <th style="min-width:170px">Medicine</th><th style="width:120px">Batch *</th><th style="width:140px">Expiry *</th><th style="width:80px">Packs *</th>
-                            <th style="width:75px">Bonus</th><th style="width:105px">Cost / pack *</th><th style="width:105px">Sale / pack *</th><th class="text-end" style="width:100px">Total</th><th></th></tr></thead>
+                            <th style="width:75px">Bonus</th><th style="width:150px">Manufacturer scheme</th><th style="width:105px">Cost / pack *</th><th style="width:105px">Sale / pack *</th><th class="text-end" style="width:100px">Total</th><th></th></tr></thead>
                         <tbody>
                             <tr v-for="(r, i) in form.items" :key="r.key">
                                 <td><div class="fw-semibold small">{{ r.name }}</div><div class="small text-muted">1 {{ r.unit }} = {{ r.pack_size }} units · Current stock {{ r.stock }} base units</div></td>
@@ -43,7 +43,7 @@
                                 <td class="text-end fw-semibold">{{ (r.quantity * r.purchase_price || 0).toFixed(2) }}</td>
                                 <td><button type="button" class="btn btn-sm text-danger" @click="form.items.splice(i, 1)"><i class="bi bi-x-lg"></i></button></td>
                             </tr>
-                            <tr v-if="!form.items.length"><td colspan="9" class="text-center text-muted py-5"><i class="bi bi-box-seam fs-2 d-block mb-2"></i>Search and add medicines from the supplier bill</td></tr>
+                            <tr v-if="!form.items.length"><td colspan="10" class="text-center text-muted py-5"><i class="bi bi-box-seam fs-2 d-block mb-2"></i>Search and add medicines from the supplier bill</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -85,6 +85,7 @@ import { notify, Swal } from '../utils/swal';
 const route = useRoute();
 const router = useRouter();
 const suppliers = ref([]);
+const schemes = ref([]);
 const saving = ref(false);
 const lastBatch = ref(null);
 const tomorrow = shiftDate(today(), 1);
@@ -94,12 +95,14 @@ const form = reactive({ supplier_id: route.query.supplier ? Number(route.query.s
 
 const supplier = computed(() => suppliers.value.find((s) => s.id === form.supplier_id));
 const subtotal = computed(() => form.items.reduce((s, r) => s + (r.quantity || 0) * (r.purchase_price || 0), 0));
-const units = computed(() => form.items.reduce((s, r) => s + ((r.quantity || 0) + (r.bonus_qty || 0)) * (r.pack_size || 1), 0));
+const units = computed(() => form.items.reduce((s, r) => s + ((r.quantity || 0) + (r.bonus_qty || 0) + schemeFree(r)) * (r.pack_size || 1), 0));
 const total = computed(() => Math.round((Math.max(subtotal.value - (form.discount || 0), 0) + (form.tax || 0)) * 100) / 100);
+
+function schemeFree(row) { const s = schemes.value.find(x => Number(x.id) === Number(row.scheme_id)); if (!s || s.scheme_type !== 'buy_x_get_y') return 0; let q = Math.floor((Number(row.quantity)||0) / Math.max(1,Number(s.buy_quantity)||1)) * Number(s.free_quantity||0); return s.max_free_quantity ? Math.min(q,Number(s.max_free_quantity)) : q; }
 
 async function addRow(m) {
     if (!m.stock_units_are_base && Number(m.pack_size || 1) > 1) { notify("Convert this medicine's legacy stock units on the Medicines page before purchasing."); return; }
-    form.items.push({ key: ++key, medicine_id: m.id, name: m.display_name, unit: m.unit, pack_size: m.pack_size || 1, stock: m.total_stock, batch_no: '', expiry_date: '', quantity: 1, bonus_qty: 0, purchase_price: m.purchase_price, sale_price: m.sale_price });
+    form.items.push({ key: ++key, medicine_id: m.id, name: m.display_name, unit: m.unit, pack_size: m.pack_size || 1, stock: m.total_stock, batch_no: '', expiry_date: '', quantity: 1, bonus_qty: 0, scheme_id: '', purchase_price: m.purchase_price, sale_price: m.sale_price });
     await nextTick();
     lastBatch.value?.focus();
 }
@@ -117,6 +120,7 @@ async function save() {
 
 onMounted(async () => {
     suppliers.value = (await api.get('/lookups')).data.suppliers;
+    try { const { data } = await api.get('/stage4/schemes'); schemes.value = (data.data || []).filter(s => s.is_active && s.scheme_type === 'buy_x_get_y' && String(s.valid_from).slice(0,10) <= today() && String(s.valid_to).slice(0,10) >= today()); } catch (e) { schemes.value = []; }
     if (route.query.medicine) {
         const { data } = await api.get(`/medicines/${route.query.medicine}`);
         addRow(data.data);

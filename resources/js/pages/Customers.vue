@@ -24,7 +24,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, reactive } from 'vue';
+import api from '../api';
 import CrudPage from '../components/CrudPage.vue';
 import PaymentModal from '../components/PaymentModal.vue';
 import { useAuth } from '../stores/auth';
@@ -33,12 +34,34 @@ import { money } from '../utils/format';
 const auth = useAuth();
 const crud = ref(null);
 const pay = ref(null);
-const fields = [
+const fields = reactive([
     { key: 'name', label: 'Name', required: true },
     { key: 'phone', label: 'Phone', col: 'col-md-6' },
     { key: 'address', label: 'Address', col: 'col-md-6' },
     ...(auth.isAdmin ? [{ key: 'credit_limit', label: 'Credit limit (blank = unlimited)', type: 'number', step: '0.01', min: 0, col: 'col-md-6', hint: 'Blank means unlimited credit.' }] : []),
-];
+]);
+if (['admin', 'branch_manager'].includes(auth.user?.role)) {
+    fields.push(
+        { key: 'insurance_provider_id', label: 'Insurance provider', type: 'select', col: 'col-md-6', options: [{ value: '', label: 'No insurance provider' }] },
+        { key: 'insurance_plan_id', label: 'Insurance plan', type: 'select', col: 'col-md-6', options: [{ value: '', label: 'No plan' }] },
+        { key: 'insurance_member_no', label: 'Insurance member number', col: 'col-md-6' },
+    );
+}
+onMounted(async () => {
+    if (!['admin', 'branch_manager'].includes(auth.user?.role)) return;
+    try {
+        const { data } = await api.get('/stage4/insurance-providers');
+        const providers = data.data || [];
+        fields.find(f => f.key === 'insurance_provider_id').options = [
+            { value: '', label: 'No insurance provider' },
+            ...providers.map(p => ({ value: p.id, label: p.name })),
+        ];
+        fields.find(f => f.key === 'insurance_plan_id').options = [
+            { value: '', label: 'No plan' },
+            ...providers.flatMap(p => (p.plans || []).map(pl => ({ value: pl.id, label: `${p.name} — ${pl.name}` }))),
+        ];
+    } catch (e) {}
+});
 const columns = [
     { key: 'name', label: 'Customer' },
     { key: 'phone', label: 'Phone' },

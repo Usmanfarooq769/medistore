@@ -14,6 +14,9 @@ class CustomerResource extends JsonResource
             'name'        => $this->name,
             'phone'       => $this->phone,
             'address'     => $this->address,
+            'insurance_provider_id' => $this->insurance_provider_id,
+            'insurance_plan_id' => $this->insurance_plan_id,
+            'insurance_member_no' => $this->insurance_member_no,
             'balance'     => (float) $this->balance,
             'sales_count' => $this->whenCounted('sales'),
         ];

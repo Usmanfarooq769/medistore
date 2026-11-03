@@ -7,6 +7,8 @@ use App\Models\MedicineBatch;
 use App\Models\StockMovement;
 use App\Services\BranchContext;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -36,6 +38,13 @@ class StockService
         ]);
 
         $this->log($medicine, $qty, $batch->id, $type, $reference, $data['note'] ?? null, (int) $batch->branch_id);
+        if ($medicine->requires_controlled_tracking && Schema::hasTable('controlled_medicine_register')) {
+            DB::table('controlled_medicine_register')->insert([
+                'branch_id'=>$batch->branch_id,'medicine_id'=>$medicine->id,'batch_id'=>$batch->id,'transaction_type'=>'purchase',
+                'quantity_change'=>$qty,'balance_after'=>$batch->quantity,'reference_no'=>$reference,'reason'=>'Stock received into controlled medicine inventory',
+                'recorded_by'=>auth()->id(),'recorded_at'=>now(),'created_at'=>now(),'updated_at'=>now(),
+            ]);
+        }
 
         return $batch;
     }
@@ -63,6 +72,7 @@ class StockService
             }
             $take = min($batch->quantity, $remaining);
             $batch->decrement('quantity', $take);
+            $this->reduceBinAllocations($batch->id, $take);
             $remaining -= $take;
             $allocations[] = [$batch, $take];
             $this->log($medicine, -$take, $batch->id, 'sale', $reference, null, (int) $batch->branch_id);
@@ -89,7 +99,25 @@ class StockService
         }
 
         $batch->increment('quantity', $delta);
+        if ($delta < 0) $this->reduceBinAllocations($batch->id, abs($delta));
         $this->log($medicine, $delta, $batch->id, $type, $reference, $note, (int) $batch->branch_id);
+        if ($medicine->requires_controlled_tracking && Schema::hasTable('controlled_medicine_register')) {
+            $registerType = match ($type) {
+                'sale_return', 'purchase_return', 'sale_void', 'purchase_void' => 'return',
+                'adjustment_in', 'adjustment_out' => 'adjustment',
+                'branch_transfer_in' => 'transfer_in',
+                'branch_transfer_out' => 'transfer_out',
+                default => null,
+            };
+            if ($registerType) {
+                DB::table('controlled_medicine_register')->insert([
+                    'branch_id'=>$batch->branch_id,'medicine_id'=>$medicine->id,'batch_id'=>$batch->id,
+                    'transaction_type'=>$registerType,'quantity_change'=>$delta,'balance_after'=>$batch->fresh()->quantity,
+                    'reference_no'=>$reference,'reason'=>$note ?: 'Controlled medicine stock movement',
+                    'recorded_by'=>auth()->id(),'recorded_at'=>now(),'created_at'=>now(),'updated_at'=>now(),
+                ]);
+            }
+        }
     }
 
     /** Put stock back (sale void / return) – recreates a batch if original was deleted */
@@ -115,6 +143,20 @@ class StockService
             $this->moveBatch($batch, -$batch->quantity, 'purchase_void', $reference, "Batch {$batch->batch_no} removed");
         }
         $batch->delete();
+    }
+
+    /** Keep bin allocations at or below the physical batch quantity when stock leaves a batch. */
+    private function reduceBinAllocations(int $batchId, int $quantity): void
+    {
+        if ($quantity <= 0 || !Schema::hasTable('batch_location_stocks')) return;
+        $remaining = $quantity;
+        $allocations = DB::table('batch_location_stocks')->where('medicine_batch_id',$batchId)->where('quantity','>',0)->orderBy('id')->lockForUpdate()->get();
+        foreach ($allocations as $allocation) {
+            if ($remaining <= 0) break;
+            $take = min((int)$allocation->quantity,$remaining);
+            DB::table('batch_location_stocks')->where('id',$allocation->id)->decrement('quantity',$take);
+            $remaining -= $take;
+        }
     }
 
     private function log(Medicine $medicine, int $delta, ?int $batchId, string $type, string $reference, ?string $note = null, ?int $branchId = null): void

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Customer extends Model
 {
-    protected $fillable = ['name', 'phone', 'address', 'balance', 'credit_limit', 'loyalty_points'];
+    protected $fillable = ['name', 'phone', 'address', 'balance', 'credit_limit', 'loyalty_points', 'insurance_provider_id', 'insurance_plan_id', 'insurance_member_no'];
 
     protected $casts = ['balance' => 'decimal:2', 'credit_limit' => 'decimal:2', 'loyalty_points' => 'integer'];
 

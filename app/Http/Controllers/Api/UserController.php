@@ -24,8 +24,8 @@ class UserController extends Controller
             'name'     => 'required|string|max:120',
             'email'    => 'required|email|max:150|unique:users,email',
             'password' => 'required|string|min:6',
-            'role'     => ['required', Rule::in(['admin', 'cashier'])],
-            'branch_id' => 'nullable|exists:branches,id',
+            'role'     => ['required', Rule::in(['admin', 'branch_manager', 'pharmacist', 'cashier'])],
+            'branch_id' => 'required_if:role,branch_manager,pharmacist|nullable|exists:branches,id',
         ]);
         $data['branch_id'] = $data['branch_id'] ?? 1;
         $user = User::create($data + ['is_active' => true]);
@@ -39,9 +39,9 @@ class UserController extends Controller
             'name'      => 'required|string|max:120',
             'email'     => ['required', 'email', 'max:150', Rule::unique('users', 'email')->ignore($user->id)],
             'password'  => 'nullable|string|min:6',
-            'role'      => ['required', Rule::in(['admin', 'cashier'])],
+            'role'      => ['required', Rule::in(['admin', 'branch_manager', 'pharmacist', 'cashier'])],
             'is_active' => 'boolean',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => 'required_if:role,branch_manager,pharmacist|nullable|exists:branches,id',
         ]);
         if (empty($data['password'])) {
             unset($data['password']);
