@@ -145,6 +145,7 @@ const menu = computed(() => {
         a && { to: '/dashboard', icon: 'bi-speedometer2', label: 'Dashboard' },
         (a || manager) && { to: '/stage4', icon: 'bi-stars', label: 'Stage 4 Operations' },
         (a || manager) && { to: '/stage5', icon: 'bi-building-gear', label: 'Stage 5 Enterprise' },
+        (a || manager) && { to: '/stage6', icon: 'bi-truck', label: 'Stage 6 Operations' },
         { to: '/pos', icon: 'bi-cart3', label: 'POS / Sell' },
         { to: '/mobile', icon: 'bi-phone', label: 'Mobile Dashboard' },
         { to: '/cashier/closing', icon: 'bi-safe', label: 'Cashier Shift / Closing' },

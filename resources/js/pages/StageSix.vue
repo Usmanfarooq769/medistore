@@ -1,0 +1,73 @@
+<template>
+  <div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <div><h4 class="mb-1">Stage 6 – Pharmacy Operations & Fulfilment</h4><div class="text-muted small">Online order requests · Delivery · Cold chain · Supplier contracts</div></div>
+      <button class="btn btn-outline-primary btn-sm" @click="loadAll" :disabled="loading"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div v-for="card in cards" :key="card.key" class="col-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-3"><div class="small text-muted">{{card.label}}</div><div class="fs-4 fw-semibold">{{overview[card.key] ?? 0}}</div></div></div></div>
+    </div>
+
+    <ul class="nav nav-pills flex-nowrap overflow-auto gap-1 mb-3">
+      <li v-for="tab in tabs" :key="tab.id" class="nav-item"><button class="nav-link text-nowrap" :class="{active:activeTab===tab.id}" @click="activeTab=tab.id">{{tab.label}}</button></li>
+    </ul>
+
+    <section v-if="activeTab==='orders'" class="card">
+      <div class="card-header d-flex justify-content-between align-items-center"><strong>Online order requests</strong><span class="small text-muted">Orders do not deduct stock. Create/link the POS sale before dispatch.</span></div>
+      <div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Order</th><th>Customer</th><th>Phone</th><th>Total</th><th>Status</th><th>POS sale</th><th class="text-end">Actions</th></tr></thead><tbody>
+        <tr v-for="o in orders" :key="o.id"><td><div class="fw-semibold">{{o.order_no}}</div><small class="text-muted">{{o.created_at}}</small></td><td>{{o.customer_name}}</td><td>{{o.customer_phone}}</td><td>{{money(o.total)}}</td><td><span class="badge text-bg-light">{{o.status}}</span></td><td>{{o.invoice_no || (o.sale_id ? '#'+o.sale_id : '—')}}</td><td class="text-end text-nowrap"><template v-if="o.status==='pending'"><button class="btn btn-sm btn-success me-1" @click="reviewOrder(o,'confirm')">Confirm</button><button class="btn btn-sm btn-outline-danger" @click="reviewOrder(o,'cancel')">Cancel</button></template><button v-if="o.status==='confirmed'" class="btn btn-sm btn-primary" @click="linkSale(o)">Link POS sale</button><button v-if="o.status==='ready' && o.sale_id" class="btn btn-sm btn-outline-primary" @click="assignDelivery(o)">Assign delivery</button></td></tr>
+        <tr v-if="!orders.length"><td colspan="7" class="text-center text-muted py-4">No online order requests.</td></tr>
+      </tbody></table></div>
+      <div class="card-footer small text-muted">Public endpoints: GET /api/storefront/branches, GET /api/storefront/catalog?branch_id=1, POST /api/storefront/orders.</div>
+    </section>
+
+    <section v-else-if="activeTab==='delivery'" class="card">
+      <div class="card-header fw-semibold">Delivery tracking</div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Order</th><th>Customer</th><th>Address</th><th>Driver</th><th>Status</th><th class="text-end">Update</th></tr></thead><tbody>
+        <tr v-for="d in deliveries" :key="d.id"><td>{{d.order_no}}</td><td>{{d.customer_name}}<div class="small text-muted">{{d.customer_phone}}</div></td><td class="text-wrap" style="min-width:180px">{{d.delivery_address}}</td><td>{{d.driver_name}}<div class="small text-muted">{{d.driver_phone}}</div></td><td><span class="badge text-bg-light">{{d.status}}</span></td><td class="text-end"><button v-if="d.status==='assigned'" class="btn btn-sm btn-outline-primary" @click="updateDelivery(d,'picked_up')">Picked up</button><button v-if="d.status==='picked_up'" class="btn btn-sm btn-success" @click="updateDelivery(d,'delivered')">Delivered</button><button v-if="['assigned','picked_up'].includes(d.status)" class="btn btn-sm btn-outline-danger ms-1" @click="updateDelivery(d,'failed')">Failed</button></td></tr>
+        <tr v-if="!deliveries.length"><td colspan="6" class="text-center text-muted py-4">No deliveries assigned.</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section v-else-if="activeTab==='coldchain'" class="row g-3">
+      <div class="col-xl-4"><div class="card"><div class="card-header fw-semibold">Register temperature device</div><div class="card-body"><form class="vstack gap-2" @submit.prevent="saveDevice"><input v-model="device.device_code" class="form-control" placeholder="Device code" required><input v-model="device.name" class="form-control" placeholder="Device name" required><input v-model="device.location" class="form-control" placeholder="Location / refrigerator"><div class="row g-2"><div class="col"><label class="form-label small">Minimum °C</label><input v-model.number="device.minimum_temperature" type="number" step="0.1" class="form-control"></div><div class="col"><label class="form-label small">Maximum °C</label><input v-model.number="device.maximum_temperature" type="number" step="0.1" class="form-control"></div></div><button class="btn btn-primary" :disabled="saving">Save device</button></form></div></div>
+        <div class="card mt-3"><div class="card-header fw-semibold">Record manual reading</div><div class="card-body"><form class="vstack gap-2" @submit.prevent="recordTemperature"><select v-model.number="reading.device_id" class="form-select" required><option value="">Select device</option><option v-for="d in devices" :key="d.id" :value="d.id">{{d.device_code}} – {{d.name}}</option></select><input v-model.number="reading.temperature" type="number" step="0.1" class="form-control" placeholder="Temperature °C" required><input v-model="reading.measured_at" type="datetime-local" class="form-control"><button class="btn btn-primary" :disabled="saving">Save reading</button></form></div></div></div>
+      <div class="col-xl-8"><div class="card mb-3"><div class="card-header fw-semibold">Cold-chain devices</div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Code</th><th>Name</th><th>Location</th><th>Range °C</th><th>Status</th></tr></thead><tbody><tr v-for="d in devices" :key="d.id"><td>{{d.device_code}}</td><td>{{d.name}}</td><td>{{d.location}}</td><td>{{d.minimum_temperature}} to {{d.maximum_temperature}}</td><td>{{d.is_active?'Active':'Inactive'}}</td></tr><tr v-if="!devices.length"><td colspan="5" class="text-center text-muted">No devices registered.</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-header fw-semibold">Temperature readings & excursions</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Time</th><th>Device</th><th>°C</th><th>Status</th><th>Action</th></tr></thead><tbody><tr v-for="l in logs" :key="l.id"><td>{{l.measured_at}}</td><td>{{l.device_code}} – {{l.device_name}}</td><td>{{l.temperature}}</td><td><span class="badge" :class="l.is_excursion?'text-bg-danger':'text-bg-success'">{{l.status}}</span></td><td><button v-if="l.is_excursion && l.status!=='resolved'" class="btn btn-sm btn-outline-success" @click="acknowledge(l)">Document action</button><span v-else>{{l.action_taken||'—'}}</span></td></tr><tr v-if="!logs.length"><td colspan="5" class="text-center text-muted">No readings recorded.</td></tr></tbody></table></div></div>
+      </div>
+    </section>
+
+    <section v-else-if="activeTab==='suppliers'" class="row g-3">
+      <div class="col-xl-4"><div class="card"><div class="card-header fw-semibold">Supplier contract</div><div class="card-body"><form class="vstack gap-2" @submit.prevent="saveContract"><select v-model.number="contract.supplier_id" class="form-select" required><option value="">Select supplier</option><option v-for="s in suppliers" :key="s.id" :value="s.id">{{s.name}}</option></select><input v-model="contract.contract_no" class="form-control" placeholder="Contract number" required><div class="row g-2"><div class="col"><label class="form-label small">Start date</label><input v-model="contract.starts_on" type="date" class="form-control" required></div><div class="col"><label class="form-label small">End date</label><input v-model="contract.ends_on" type="date" class="form-control" required></div></div><div class="row g-2"><div class="col"><label class="form-label small">Lead days</label><input v-model.number="contract.lead_days" type="number" min="0" class="form-control"></div><div class="col"><label class="form-label small">Discount %</label><input v-model.number="contract.discount_percent" type="number" min="0" max="100" step="0.01" class="form-control"></div></div><input v-model="contract.payment_terms" class="form-control" placeholder="Payment terms"><select v-model="contract.status" class="form-select"><option value="draft">Draft</option><option value="active">Active</option><option value="terminated">Terminated</option></select><textarea v-model="contract.notes" class="form-control" placeholder="Notes"></textarea><button class="btn btn-primary" :disabled="saving">Save contract</button></form></div></div></div>
+      <div class="col-xl-8"><div class="card mb-3"><div class="card-header fw-semibold">Supplier contracts</div><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Contract</th><th>Supplier</th><th>Period</th><th>Lead</th><th>Discount</th><th>Status</th></tr></thead><tbody><tr v-for="c in contracts" :key="c.id"><td>{{c.contract_no}}</td><td>{{c.supplier_name}}</td><td>{{c.starts_on}} – {{c.ends_on}}</td><td>{{c.lead_days}} days</td><td>{{c.discount_percent}}%</td><td>{{c.status}}</td></tr><tr v-if="!contracts.length"><td colspan="6" class="text-center text-muted">No supplier contracts.</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-header fw-semibold">Supplier purchasing performance</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Supplier</th><th>Purchases</th><th>Purchase total</th><th>Outstanding</th></tr></thead><tbody><tr v-for="s in performance" :key="s.id"><td>{{s.name}}</td><td>{{s.purchase_count}}</td><td>{{money(s.purchase_total)}}</td><td>{{money(s.outstanding)}}</td></tr><tr v-if="!performance.length"><td colspan="4" class="text-center text-muted">No supplier performance data.</td></tr></tbody></table></div></div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, reactive, ref } from 'vue';
+import api from '../api';
+
+const loading=ref(false), saving=ref(false), activeTab=ref('orders');
+const tabs=[{id:'orders',label:'Online Orders'},{id:'delivery',label:'Delivery'},{id:'coldchain',label:'Cold Chain'},{id:'suppliers',label:'Supplier Contracts'}];
+const cards=[{key:'online_orders_pending',label:'Open order requests'},{key:'deliveries_active',label:'Active deliveries'},{key:'cold_chain_open_excursions',label:'Open temperature excursions'},{key:'active_supplier_contracts',label:'Active supplier contracts'}];
+const overview=reactive({}), orders=ref([]), deliveries=ref([]), devices=ref([]), logs=ref([]), contracts=ref([]), performance=ref([]), suppliers=ref([]);
+const device=reactive({device_code:'',name:'',location:'',minimum_temperature:2,maximum_temperature:8,is_active:true});
+const reading=reactive({device_id:'',temperature:'',measured_at:''});
+const contract=reactive({supplier_id:'',contract_no:'',starts_on:new Date().toISOString().slice(0,10),ends_on:'',lead_days:0,discount_percent:0,payment_terms:'',status:'draft',notes:''});
+const money=v=>new Intl.NumberFormat('en-PK',{style:'currency',currency:'PKR',maximumFractionDigits:2}).format(Number(v||0));
+const rows=r=>r?.data?.data ?? r?.data ?? [];
+async function loadAll(){loading.value=true;try{const calls=await Promise.all([api.get('/stage6/overview'),api.get('/stage6/online-orders'),api.get('/stage6/deliveries'),api.get('/stage6/cold-chain/devices'),api.get('/stage6/cold-chain/logs'),api.get('/stage6/supplier-contracts'),api.get('/stage6/supplier-performance'),api.get('/suppliers')]);Object.assign(overview,calls[0].data);orders.value=rows(calls[1]);deliveries.value=rows(calls[2]);devices.value=rows(calls[3]);logs.value=rows(calls[4]);contracts.value=rows(calls[5]);performance.value=calls[6].data.suppliers||[];suppliers.value=rows(calls[7]);}catch(e){}finally{loading.value=false;}}
+async function run(p){saving.value=true;try{await p;await loadAll();return true;}catch(e){return false;}finally{saving.value=false;}}
+async function reviewOrder(o,decision){if(!confirm(`${decision} ${o.order_no}?`))return;await run(api.post(`/stage6/online-orders/${o.id}/review`,{decision}));}
+async function linkSale(o){const sale_id=prompt('Enter the POS sale ID for this order:');if(!sale_id)return;await run(api.post(`/stage6/online-orders/${o.id}/link-sale`,{sale_id:Number(sale_id)}));}
+async function assignDelivery(o){const driver_name=prompt('Driver name:');if(!driver_name)return;const driver_phone=prompt('Driver phone (optional):')||null;await run(api.post(`/stage6/online-orders/${o.id}/delivery`,{driver_name,driver_phone}));}
+async function updateDelivery(d,status){if(!confirm(`Mark delivery ${d.order_no} as ${status}?`))return;await run(api.patch(`/stage6/deliveries/${d.id}`,{status}));}
+async function saveDevice(){await run(api.post('/stage6/cold-chain/devices',device));Object.assign(device,{device_code:'',name:'',location:'',minimum_temperature:2,maximum_temperature:8});}
+async function recordTemperature(){await run(api.post(`/stage6/cold-chain/devices/${reading.device_id}/readings`,{temperature:reading.temperature,measured_at:reading.measured_at||null}));Object.assign(reading,{device_id:'',temperature:'',measured_at:''});}
+async function acknowledge(l){const action_taken=prompt('Describe investigation and corrective action:');if(!action_taken)return;const status=confirm('Has the excursion been fully resolved? OK = Resolved, Cancel = Acknowledged')?'resolved':'acknowledged';await run(api.post(`/stage6/cold-chain/logs/${l.id}/acknowledge`,{action_taken,status}));}
+async function saveContract(){await run(api.post('/stage6/supplier-contracts',contract));Object.assign(contract,{supplier_id:'',contract_no:'',ends_on:'',lead_days:0,discount_percent:0,payment_terms:'',status:'draft',notes:''});}
+onMounted(loadAll);
+</script>

@@ -12,6 +12,7 @@ const routes = [
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
     { path: '/stage4', component: () => import('../pages/StageFour.vue'), meta: { title: 'Stage 4 Operations', stage4: true } },
     { path: '/stage5', component: () => import('../pages/StageFive.vue'), meta: { title: 'Stage 5 Enterprise Operations', stage5: true } },
+    { path: '/stage6', component: () => import('../pages/StageSix.vue'), meta: { title: 'Stage 6 Operations', stage6: true } },
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
     { path: '/mobile', component: () => import('../pages/MobileHome.vue'), meta: { title: 'Mobile Dashboard' } },
     { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
@@ -89,6 +90,7 @@ router.beforeEach(async (to) => {
     if (to.meta.admin && !auth.isAdmin) return '/pos';
     if (to.meta.stage4 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.stage5 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
+    if (to.meta.stage6 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.manager && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     return true;
 });

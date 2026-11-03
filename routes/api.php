@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\StageFourController;
 use App\Http\Controllers\Api\StageFiveController;
+use App\Http\Controllers\Api\StageSixController;
 use Illuminate\Support\Facades\Route;
 
 /* All routes are prefixed with /api (bootstrap/app.php) */
@@ -289,3 +290,33 @@ Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist'])->pre
 });
 
 Route::post('integrations/facilities/{facility}/prescriptions', [StageFiveController::class, 'receiveFacilityPrescription'])->middleware('throttle:30,1');
+
+
+/* ---------------- Stage 6: storefront, delivery, cold-chain and supplier operations ---------------- */
+Route::get('storefront/branches', [StageSixController::class, 'publicBranches'])->middleware('throttle:30,1');
+Route::get('storefront/catalog', [StageSixController::class, 'publicCatalog'])->middleware('throttle:60,1');
+Route::post('storefront/orders', [StageSixController::class, 'placeOnlineOrder'])->middleware('throttle:8,1');
+
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('stage6')->group(function () {
+    Route::get('overview', [StageSixController::class, 'overview']);
+    Route::get('online-orders', [StageSixController::class, 'onlineOrders']);
+    Route::get('online-orders/{order}', [StageSixController::class, 'onlineOrderDetails']);
+    Route::post('online-orders/{order}/review', [StageSixController::class, 'reviewOnlineOrder'])->middleware('role:admin,branch_manager');
+    Route::post('online-orders/{order}/link-sale', [StageSixController::class, 'linkSale'])->middleware('role:admin,branch_manager,cashier');
+    Route::get('deliveries', [StageSixController::class, 'deliveries']);
+    Route::post('online-orders/{order}/delivery', [StageSixController::class, 'assignDelivery'])->middleware('role:admin,branch_manager');
+    Route::patch('deliveries/{delivery}', [StageSixController::class, 'updateDelivery']);
+
+    Route::get('cold-chain/devices', [StageSixController::class, 'coldChainDevices']);
+    Route::post('cold-chain/devices', [StageSixController::class, 'saveColdChainDevice'])->middleware('role:admin,branch_manager');
+    Route::put('cold-chain/devices/{device}', [StageSixController::class, 'saveColdChainDevice'])->middleware('role:admin,branch_manager');
+    Route::get('cold-chain/logs', [StageSixController::class, 'coldChainLogs']);
+    Route::post('cold-chain/devices/{device}/readings', [StageSixController::class, 'recordTemperature']);
+    Route::post('cold-chain/logs/{log}/acknowledge', [StageSixController::class, 'acknowledgeExcursion'])->middleware('role:admin,branch_manager,pharmacist');
+
+    Route::get('supplier-contracts', [StageSixController::class, 'supplierContracts'])->middleware('role:admin,branch_manager');
+    Route::post('supplier-contracts', [StageSixController::class, 'saveSupplierContract'])->middleware('role:admin,branch_manager');
+    Route::put('supplier-contracts/{contract}', [StageSixController::class, 'saveSupplierContract'])->middleware('role:admin,branch_manager');
+    Route::get('supplier-performance', [StageSixController::class, 'supplierPerformance'])->middleware('role:admin,branch_manager');
+    Route::get('event-logs', [StageSixController::class, 'eventLogs'])->middleware('role:admin,branch_manager');
+});

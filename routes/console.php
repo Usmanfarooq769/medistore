@@ -17,3 +17,6 @@ Schedule::command('store:backup-cloud')->dailyAt('02:00')->withoutOverlapping();
 
 // Send due medicine refill reminders to customers who explicitly opted in.
 Schedule::command('store:send-refill-reminders')->dailyAt('10:00')->withoutOverlapping();
+
+// Keep supplier contract status aligned with its validity period.
+Schedule::command('store:expire-supplier-contracts')->dailyAt('00:20')->withoutOverlapping();
