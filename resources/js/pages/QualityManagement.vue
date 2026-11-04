@@ -1,0 +1,91 @@
+<template>
+  <div class="container-fluid px-0">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+      <div><h4 class="mb-1">Quality & Safety Management</h4><div class="text-muted small">Medication safety, controlled documents and branch compliance</div></div>
+      <button class="btn btn-outline-secondary btn-sm" @click="loadAll"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="small text-muted">Reported incidents</div><div class="fs-3 fw-bold">{{ overview.total || 0 }}</div></div></div></div>
+      <div class="col-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="small text-muted">Open incidents</div><div class="fs-3 fw-bold text-warning">{{ overview.open || 0 }}</div></div></div></div>
+      <div class="col-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="small text-muted">Serious incidents</div><div class="fs-3 fw-bold text-danger">{{ overview.serious || 0 }}</div></div></div></div>
+      <div class="col-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="small text-muted">Overdue actions</div><div class="fs-3 fw-bold">{{ overview.overdue_actions || 0 }}</div></div></div></div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item"><button class="nav-link" :class="{active:tab==='incidents'}" @click="tab='incidents'">Medication safety</button></li>
+      <li class="nav-item"><button class="nav-link" :class="{active:tab==='documents'}" @click="tab='documents';loadDocuments()">Controlled documents</button></li>
+      <li class="nav-item"><button class="nav-link" :class="{active:tab==='audits'}" @click="tab='audits';loadAudits()">Compliance audits</button></li>
+    </ul>
+
+    <section v-if="tab==='incidents'">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-transparent fw-semibold">Report a medication safety incident</div>
+        <div class="card-body">
+          <form class="row g-2" @submit.prevent="createIncident">
+            <div class="col-md-3"><label class="form-label small">Incident type</label><select v-model="incidentForm.incident_type" class="form-select" required><option value="medication_error">Medication error</option><option value="adverse_reaction">Adverse reaction</option><option value="near_miss">Near miss</option><option value="product_quality">Product quality</option><option value="cold_chain">Cold-chain excursion</option><option value="other">Other</option></select></div>
+            <div class="col-md-2"><label class="form-label small">Severity</label><select v-model="incidentForm.severity" class="form-select"><option value="low">Low</option><option value="moderate">Moderate</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+            <div class="col-md-3"><label class="form-label small">Occurred at</label><input v-model="incidentForm.occurred_at" type="datetime-local" class="form-control" required></div>
+            <div class="col-md-4"><label class="form-label small">Medicine ID (optional)</label><input v-model.number="incidentForm.medicine_id" type="number" min="1" class="form-control" placeholder="Medicine ID"></div>
+            <div class="col-12"><label class="form-label small">What happened?</label><textarea v-model="incidentForm.description" class="form-control" rows="2" required maxlength="10000"></textarea></div>
+            <div class="col-12"><label class="form-label small">Immediate action taken</label><textarea v-model="incidentForm.immediate_action" class="form-control" rows="2"></textarea></div>
+            <div class="col-12 text-end"><button class="btn btn-success" :disabled="saving">{{ saving ? 'Saving…' : 'Submit incident report' }}</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="card border-0 shadow-sm"><div class="card-header bg-transparent d-flex justify-content-between align-items-center"><strong>Incident register</strong><select v-model="incidentFilter" class="form-select form-select-sm" style="max-width:170px" @change="loadIncidents"><option value="">All statuses</option><option value="reported">Reported</option><option value="under_review">Under review</option><option value="action_required">Action required</option><option value="closed">Closed</option></select></div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Incident</th><th>Type</th><th>Severity</th><th>Medicine</th><th>Occurred</th><th>Status</th><th></th></tr></thead><tbody><tr v-for="row in incidents" :key="row.id"><td class="fw-semibold">{{ row.incident_number || ('#'+row.id) }}</td><td>{{ label(row.incident_type) }}</td><td><span class="badge" :class="severityClass(row.severity)">{{ row.severity }}</span></td><td>{{ row.medicine?.name || '—' }}</td><td>{{ date(row.occurred_at) }}</td><td><span class="badge bg-light text-dark">{{ label(row.status) }}</span></td><td><button class="btn btn-sm btn-outline-primary" @click="selectIncident(row)">Review</button></td></tr><tr v-if="!incidents.length"><td colspan="7" class="text-center text-muted py-4">No incidents found.</td></tr></tbody></table></div>
+      </div>
+      <div v-if="selectedIncident" class="card border-0 shadow-sm mt-3"><div class="card-header bg-transparent d-flex justify-content-between"><strong>{{ selectedIncident.incident_number }} – Review</strong><button class="btn-close" @click="selectedIncident=null"></button></div><div class="card-body">
+        <p class="mb-2">{{ selectedIncident.description }}</p><div class="row g-2"><div class="col-md-6"><label class="form-label small">Root cause</label><textarea v-model="reviewForm.root_cause" class="form-control" rows="2"></textarea></div><div class="col-md-6"><label class="form-label small">Clinical outcome</label><textarea v-model="reviewForm.clinical_outcome" class="form-control" rows="2"></textarea></div></div>
+        <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary btn-sm" @click="reviewIncident">Save review</button><button class="btn btn-outline-success btn-sm" @click="addAction">Add corrective action</button><button v-if="selectedIncident.status!=='closed'" class="btn btn-success btn-sm" @click="closeIncident">Close incident</button></div>
+        <div v-if="selectedIncident.actions?.length" class="mt-3"><div class="fw-semibold mb-2">Corrective / preventive actions</div><div v-for="a in selectedIncident.actions" :key="a.id" class="d-flex flex-wrap align-items-center gap-2 border rounded p-2 mb-2"><div class="flex-grow-1"><div class="fw-semibold">{{ a.title }}</div><div class="small text-muted">{{ a.action_type }} · Due {{ a.due_date || 'not set' }}</div></div><select :value="a.status" class="form-select form-select-sm" style="max-width:150px" @change="updateAction(a,$event.target.value)"><option value="open">Open</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="verified">Verified</option></select></div></div>
+      </div></div>
+    </section>
+
+    <section v-if="tab==='documents'">
+      <div class="card border-0 shadow-sm mb-3"><div class="card-header bg-transparent fw-semibold">Register a controlled document</div><div class="card-body"><form class="row g-2" @submit.prevent="createDocument"><div class="col-md-3"><input v-model="documentForm.document_code" class="form-control" placeholder="Document code" required></div><div class="col-md-4"><input v-model="documentForm.title" class="form-control" placeholder="Document title" required></div><div class="col-md-2"><select v-model="documentForm.category" class="form-select"><option value="standard_operating_procedure">SOP</option><option value="policy">Policy</option><option value="work_instruction">Work instruction</option><option value="form">Form</option><option value="emergency_plan">Emergency plan</option><option value="other">Other</option></select></div><div class="col-md-3"><input type="file" class="form-control" accept=".pdf,.doc,.docx" @change="documentFile=$event.target.files[0]" required></div><div class="col-12"><input v-model="documentForm.change_summary" class="form-control" placeholder="Change summary / purpose"></div><div class="col-12 text-end"><button class="btn btn-success" :disabled="saving">Upload for approval</button></div></form></div></div>
+      <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Code</th><th>Title</th><th>Version</th><th>Status</th><th>Review due</th><th>Actions</th></tr></thead><tbody><tr v-for="d in documents" :key="d.id"><td class="fw-semibold">{{ d.document_code }}</td><td>{{ d.title }}</td><td>v{{ d.current_version }}</td><td><span class="badge bg-light text-dark">{{ label(d.status) }}</span></td><td>{{ d.review_due_date || '—' }}</td><td class="text-nowrap"><button v-if="d.status==='pending_approval'" class="btn btn-sm btn-outline-success me-1" @click="approveDocument(d)">Approve</button><button class="btn btn-sm btn-outline-primary" @click="downloadDocument(d)">Download</button></td></tr><tr v-if="!documents.length"><td colspan="6" class="text-center text-muted py-4">No controlled documents registered.</td></tr></tbody></table></div></div>
+    </section>
+
+    <section v-if="tab==='audits'">
+      <div class="card border-0 shadow-sm mb-3"><div class="card-header bg-transparent fw-semibold">Create branch compliance audit</div><div class="card-body"><form @submit.prevent="createAudit"><div class="row g-2"><div class="col-md-5"><input v-model="auditForm.title" class="form-control" placeholder="Audit title" required></div><div class="col-md-3"><input v-model="auditForm.audit_scope" class="form-control" placeholder="Scope (e.g. dispensing) "></div><div class="col-md-2"><input v-model="auditForm.audit_date" type="date" class="form-control" required></div><div class="col-md-2"><button class="btn btn-success w-100">Create audit</button></div></div><div class="small text-muted mt-2">A starter checklist is added automatically; you can record evidence and findings after creation.</div></form></div></div>
+      <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Audit</th><th>Date</th><th>Branch</th><th>Checklist</th><th>Status</th><th></th></tr></thead><tbody><tr v-for="a in audits" :key="a.id"><td><strong>{{ a.audit_number || ('#'+a.id) }}</strong><div class="small text-muted">{{ a.title }}</div></td><td>{{ a.audit_date }}</td><td>{{ a.branch?.name || 'All branches' }}</td><td>{{ a.items?.filter(i=>i.result!=='pending').length || 0 }} / {{ a.items?.length || 0 }} completed</td><td>{{ label(a.status) }}</td><td><button class="btn btn-sm btn-outline-primary" @click="activeAudit=activeAudit?.id===a.id?null:a">Checklist</button></td></tr><tr v-if="!audits.length"><td colspan="6" class="text-center text-muted py-4">No audits found.</td></tr></tbody></table></div></div>
+      <div v-if="activeAudit" class="card border-0 shadow-sm mt-3"><div class="card-header bg-transparent fw-semibold">{{ activeAudit.title }} checklist</div><div class="card-body"><div v-for="item in activeAudit.items" :key="item.id" class="border rounded p-3 mb-2"><div class="fw-semibold mb-2">{{ item.requirement }}</div><div class="row g-2"><div class="col-md-3"><select :value="item.result" class="form-select form-select-sm" @change="updateAuditItem(item,$event.target.value)"><option value="pending">Pending</option><option value="compliant">Compliant</option><option value="non_compliant">Non-compliant</option><option value="not_applicable">Not applicable</option></select></div><div class="col-md-9 small text-muted">{{ item.evidence_notes || 'Add evidence from the audit record.' }}</div></div></div><button v-if="activeAudit.status!=='closed'" class="btn btn-success btn-sm" @click="closeAudit(activeAudit)">Close audit</button></div></div>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, ref } from 'vue';
+import api from '../api';
+import { Swal } from '../utils/swal';
+
+const tab=ref('incidents'), saving=ref(false), overview=ref({}), incidents=ref([]), documents=ref([]), audits=ref([]), incidentFilter=ref(''), selectedIncident=ref(null), activeAudit=ref(null), documentFile=ref(null);
+const incidentForm=ref({incident_type:'near_miss',severity:'low',occurred_at:new Date().toISOString().slice(0,16),description:'',immediate_action:''});
+const reviewForm=ref({root_cause:'',clinical_outcome:''});
+const documentForm=ref({document_code:'',title:'',category:'standard_operating_procedure',change_summary:''});
+const auditForm=ref({title:'',audit_scope:'',audit_date:new Date().toISOString().slice(0,10)});
+const starterItems=['Prescription and pharmacist verification records are complete','Expired and quarantined stock is segregated from saleable stock','Cold-chain temperature records and excursions are reviewed','Controlled medicine records are complete where applicable','Customer complaints and medication incidents are documented'];
+const label=v=>(v||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
+const date=v=>v?new Date(v).toLocaleString():'—';
+const severityClass=v=>v==='critical'?'bg-danger':v==='high'?'bg-warning text-dark':v==='moderate'?'bg-info text-dark':'bg-secondary';
+async function loadOverview(){overview.value=(await api.get('/quality/overview')).data;}
+async function loadIncidents(){const {data}=await api.get('/quality/incidents',{params:{status:incidentFilter.value}});incidents.value=data.data||[];}
+async function loadDocuments(){const {data}=await api.get('/quality/documents');documents.value=data.data||[];}
+async function loadAudits(){const {data}=await api.get('/quality/audits');audits.value=data.data||[];}
+async function loadAll(){await Promise.all([loadOverview(),loadIncidents()]);if(tab.value==='documents')await loadDocuments();if(tab.value==='audits')await loadAudits();}
+async function createIncident(){saving.value=true;try{await api.post('/quality/incidents',incidentForm.value);incidentForm.value={...incidentForm.value,description:'',immediate_action:''};await loadAll();Swal.fire({icon:'success',title:'Incident reported'});}finally{saving.value=false;}}
+function selectIncident(row){selectedIncident.value=row;reviewForm.value={root_cause:row.root_cause||'',clinical_outcome:row.clinical_outcome||''};}
+async function reviewIncident(){await api.patch(`/quality/incidents/${selectedIncident.value.id}/review`,reviewForm.value);await loadIncidents();selectedIncident.value=(await api.get(`/quality/incidents/${selectedIncident.value.id}`)).data;}
+async function addAction(){const {value}=await Swal.fire({title:'Corrective action',input:'text',inputLabel:'Action title',showCancelButton:true,inputValidator:v=>!v?'Enter an action title':undefined});if(!value)return;await api.post(`/quality/incidents/${selectedIncident.value.id}/actions`,{action_type:'corrective',title:value});selectedIncident.value=(await api.get(`/quality/incidents/${selectedIncident.value.id}`)).data;await loadOverview();}
+async function updateAction(action,status){await api.patch(`/quality/actions/${action.id}`,{status});selectedIncident.value=(await api.get(`/quality/incidents/${selectedIncident.value.id}`)).data;await loadOverview();}
+async function closeIncident(){const {value}=await Swal.fire({title:'Close incident',input:'textarea',inputLabel:'Closure summary',showCancelButton:true,inputValidator:v=>!v?'Closure summary is required':undefined});if(!value)return;await api.post(`/quality/incidents/${selectedIncident.value.id}/close`,{closure_summary:value});selectedIncident.value=null;await loadAll();}
+async function createDocument(){if(!documentFile.value)return;const form=new FormData();Object.entries(documentForm.value).forEach(([k,v])=>form.append(k,v||''));form.append('document_file',documentFile.value);saving.value=true;try{await api.post('/quality/documents',form);documentForm.value={document_code:'',title:'',category:'standard_operating_procedure',change_summary:''};documentFile.value=null;await loadDocuments();Swal.fire({icon:'success',title:'Document submitted for approval'});}finally{saving.value=false;}}
+async function approveDocument(d){const effective=prompt('Effective date (YYYY-MM-DD)',new Date().toISOString().slice(0,10));if(!effective)return;const due=prompt('Next review date (YYYY-MM-DD)',new Date(Date.now()+365*86400000).toISOString().slice(0,10));if(!due)return;await api.post(`/quality/documents/${d.id}/approve`,{effective_date:effective,review_due_date:due});await loadDocuments();}
+async function downloadDocument(d){const version=d.current_version;const response=await api.get(`/quality/documents/${d.id}/revisions/${version}/download`,{responseType:'blob'});const url=URL.createObjectURL(response.data);const a=document.createElement('a');a.href=url;a.download=`${d.document_code}-v${version}`;a.click();URL.revokeObjectURL(url);}
+async function createAudit(){const items=starterItems.map((requirement,i)=>({item_code:`GEN-${i+1}`,requirement}));await api.post('/quality/audits',{...auditForm.value,items});await loadAudits();Swal.fire({icon:'success',title:'Audit created'});}
+async function updateAuditItem(item,result){const evidence=prompt('Evidence / notes (optional)',item.evidence_notes||'')||'';let corrective_action=item.corrective_action||'';if(result==='non_compliant'){corrective_action=prompt('Required corrective action')||'';if(!corrective_action)return;}await api.patch(`/quality/audits/${activeAudit.value.id}/items/${item.id}`,{result,evidence_notes:evidence,corrective_action});await loadAudits();activeAudit.value=audits.value.find(a=>a.id===activeAudit.value.id)||null;}
+async function closeAudit(a){const summary=prompt('Audit summary');if(!summary)return;await api.post(`/quality/audits/${a.id}/close`,{summary});activeAudit.value=null;await loadAudits();}
+onMounted(loadAll);
+</script>

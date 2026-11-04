@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Medicine;
 use App\Models\Sale;
 use App\Services\BranchContext;
+use App\Services\PartnerWebhookService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -57,7 +58,7 @@ class StageSixController extends Controller
         return response()->json(['branch'=>$branch,'medicines'=>$rows]);
     }
 
-    public function placeOnlineOrder(Request $request)
+    public function placeOnlineOrder(Request $request, PartnerWebhookService $webhooks)
     {
         $data = $request->validate([
             'branch_id'=>'required|integer|exists:branches,id', 'customer_name'=>'required|string|max:150',
@@ -67,7 +68,7 @@ class StageSixController extends Controller
             'items.*.quantity'=>'required|integer|min:1|max:500',
         ]);
         $branch = Branch::whereKey($data['branch_id'])->where('is_active',true)->firstOrFail();
-        return DB::transaction(function () use ($data, $branch) {
+        return DB::transaction(function () use ($data, $branch, $webhooks) {
             $subtotal = 0; $lines = [];
             foreach ($data['items'] as $line) {
                 $medicine = Medicine::whereKey($line['medicine_id'])->where('is_active',true)->firstOrFail();
@@ -90,7 +91,9 @@ class StageSixController extends Controller
                 'created_at'=>now(),'updated_at'=>now(),
             ]);
             foreach ($lines as $line) DB::table('online_order_items')->insert($line + ['online_order_id'=>$id,'created_at'=>now(),'updated_at'=>now()]);
-            return response()->json(['message'=>'Order request received. The pharmacy will confirm availability before preparing it.','order_no'=>DB::table('online_orders')->where('id',$id)->value('order_no')],201);
+            $order=DB::table('online_orders')->where('id',$id)->first();
+            $webhooks->queue('order.created',['order_no'=>$order->order_no,'branch_id'=>$order->branch_id,'total'=>$order->total,'status'=>$order->status]);
+            return response()->json(['message'=>'Order request received. The pharmacy will confirm availability before preparing it.','order_no'=>$order->order_no],201);
         });
     }
 
@@ -111,10 +114,10 @@ class StageSixController extends Controller
         return response()->json($head);
     }
 
-    public function reviewOnlineOrder(Request $request, int $order)
+    public function reviewOnlineOrder(Request $request, int $order, PartnerWebhookService $webhooks)
     {
         $data = $request->validate(['decision'=>['required',Rule::in(['confirm','cancel'])],'staff_note'=>'nullable|string|max:1500']);
-        return DB::transaction(function () use ($data,$order) {
+        return DB::transaction(function () use ($data,$order,$webhooks) {
             $head = DB::table('online_orders')->where('id',$order)->where('branch_id',$this->branch())->lockForUpdate()->first();
             abort_unless($head,404);
             if ($head->status !== 'pending') throw ValidationException::withMessages(['order'=>'Only pending orders can be reviewed.']);
@@ -133,11 +136,12 @@ class StageSixController extends Controller
                 DB::table('online_orders')->where('id',$order)->update(['status'=>'cancelled','staff_note'=>$data['staff_note']??null,'updated_at'=>now()]);
             }
             $this->logEvent('online_order_'.$data['decision'],'online_order',$order,$data);
+            $webhooks->queue($data['decision']==='confirm'?'order.confirmed':'order.cancelled',['order_id'=>$order,'decision'=>$data['decision'],'branch_id'=>$this->branch()]);
             return response()->json(['message'=>'Online order '.$data['decision'].'ed.']);
         });
     }
 
-    public function linkSale(Request $request, int $order)
+    public function linkSale(Request $request, int $order, PartnerWebhookService $webhooks)
     {
         $data=$request->validate(['sale_id'=>'required|integer|exists:sales,id']);
         $head=DB::table('online_orders')->where('id',$order)->where('branch_id',$this->branch())->first();
@@ -153,6 +157,7 @@ class StageSixController extends Controller
         }
         DB::table('online_orders')->where('id',$order)->update(['sale_id'=>$sale->id,'status'=>'ready','updated_at'=>now()]);
         $this->logEvent('online_order_linked_to_sale','online_order',$order,['sale_id'=>$sale->id]);
+        $webhooks->queue('order.sale_linked',['order_id'=>$order,'sale_id'=>$sale->id,'branch_id'=>$this->branch()]);
         return response()->json(['message'=>'POS sale linked. Order is ready for delivery.']);
     }
 

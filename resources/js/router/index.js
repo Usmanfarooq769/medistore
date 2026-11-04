@@ -7,12 +7,17 @@ const admin = { admin: true };
 // every page is lazy-loaded => small first download, fast start
 const routes = [
     { path: '/login', component: () => import('../pages/Login.vue'), meta: { guest: true, blank: true } },
+    { path: '/customer-portal', component: () => import('../pages/CustomerPortal.vue'), meta: { public: true, blank: true, title: 'Customer Portal' } },
     { path: '/', component: Blank },
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
     { path: '/stage4', component: () => import('../pages/StageFour.vue'), meta: { title: 'Stage 4 Operations', stage4: true } },
     { path: '/stage5', component: () => import('../pages/StageFive.vue'), meta: { title: 'Stage 5 Enterprise Operations', stage5: true } },
     { path: '/stage6', component: () => import('../pages/StageSix.vue'), meta: { title: 'Stage 6 Operations', stage6: true } },
+    { path: '/quality-governance', component: () => import('../pages/QualityManagement.vue'), meta: { title: 'Quality & Safety', quality: true } },
+    { path: '/product-roadmap', component: () => import('../pages/ProductRoadmap.vue'), meta: { ...admin, title: 'Product Completion Roadmap' } },
+    { path: '/enterprise-platform', component: () => import('../pages/EnterprisePlatform.vue'), meta: { ...admin, title: 'Enterprise Platform' } },
+    { path: '/system-readiness', component: () => import('../pages/SystemReadiness.vue'), meta: { ...admin, title: 'Production Readiness' } },
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
     { path: '/mobile', component: () => import('../pages/MobileHome.vue'), meta: { title: 'Mobile Dashboard' } },
     { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
@@ -79,6 +84,7 @@ const router = createRouter({
 router.beforeEach(async (to) => {
     const auth = useAuth();
 
+    if (to.meta.public) return true;
     if (to.meta.guest) return auth.token ? '/' : true;
     if (!auth.token) return { path: '/login', query: { redirect: to.fullPath } };
 
@@ -91,6 +97,7 @@ router.beforeEach(async (to) => {
     if (to.meta.stage4 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.stage5 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.stage6 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
+    if (to.meta.quality && !['admin', 'branch_manager', 'pharmacist'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.manager && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     return true;
 });

@@ -23,6 +23,15 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\StageFourController;
 use App\Http\Controllers\Api\StageFiveController;
 use App\Http\Controllers\Api\StageSixController;
+use App\Http\Controllers\Api\MedicationSafetyController;
+use App\Http\Controllers\Api\DocumentGovernanceController;
+use App\Http\Controllers\Api\ComplianceAuditController;
+use App\Http\Controllers\Api\ProductRoadmapController;
+use App\Http\Controllers\Api\PartnerIntegrationController;
+use App\Http\Controllers\Api\CustomerPortalController;
+use App\Http\Controllers\Api\NotificationCenterController;
+use App\Http\Controllers\Api\SubscriptionManagementController;
+use App\Http\Controllers\Api\SystemHealthController;
 use Illuminate\Support\Facades\Route;
 
 /* All routes are prefixed with /api (bootstrap/app.php) */
@@ -319,4 +328,91 @@ Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier
     Route::put('supplier-contracts/{contract}', [StageSixController::class, 'saveSupplierContract'])->middleware('role:admin,branch_manager');
     Route::get('supplier-performance', [StageSixController::class, 'supplierPerformance'])->middleware('role:admin,branch_manager');
     Route::get('event-logs', [StageSixController::class, 'eventLogs'])->middleware('role:admin,branch_manager');
+});
+
+
+/* ---------------- Quality, safety, document control and product governance ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('quality')->group(function () {
+    Route::get('overview', [MedicationSafetyController::class, 'overview']);
+    Route::get('incidents', [MedicationSafetyController::class, 'index']);
+    Route::post('incidents', [MedicationSafetyController::class, 'store']);
+    Route::get('incidents/{incident}', [MedicationSafetyController::class, 'show']);
+    Route::post('incidents/{incident}/actions', [MedicationSafetyController::class, 'storeAction'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::patch('actions/{action}', [MedicationSafetyController::class, 'updateAction'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::patch('incidents/{incident}/review', [MedicationSafetyController::class, 'review'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::post('incidents/{incident}/close', [MedicationSafetyController::class, 'close'])->middleware('role:admin,branch_manager,pharmacist');
+
+    Route::get('documents', [DocumentGovernanceController::class, 'index'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::post('documents', [DocumentGovernanceController::class, 'store'])->middleware('role:admin,branch_manager');
+    Route::post('documents/{document}/revisions', [DocumentGovernanceController::class, 'revise'])->middleware('role:admin,branch_manager');
+    Route::post('documents/{document}/approve', [DocumentGovernanceController::class, 'approve'])->middleware('role:admin,branch_manager');
+    Route::post('documents/{document}/retire', [DocumentGovernanceController::class, 'retire'])->middleware('role:admin');
+    Route::get('documents/{document}/revisions/{revision}/download', [DocumentGovernanceController::class, 'download'])->middleware('role:admin,branch_manager,pharmacist');
+
+    Route::get('audits', [ComplianceAuditController::class, 'index'])->middleware('role:admin,branch_manager');
+    Route::post('audits', [ComplianceAuditController::class, 'store'])->middleware('role:admin,branch_manager');
+    Route::patch('audits/{audit}/items/{item}', [ComplianceAuditController::class, 'updateItem'])->middleware('role:admin,branch_manager');
+    Route::post('audits/{audit}/close', [ComplianceAuditController::class, 'close'])->middleware('role:admin,branch_manager');
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('product-roadmap')->group(function () {
+    Route::get('/', [ProductRoadmapController::class, 'index']);
+    Route::patch('milestones/{milestone}', [ProductRoadmapController::class, 'updateMilestone']);
+    Route::patch('tasks/{task}', [ProductRoadmapController::class, 'updateTask']);
+});
+
+
+/* ---------------- Stage 8: customer self-service and partner ecosystem ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('enterprise')->group(function () {
+    Route::get('partners', [PartnerIntegrationController::class, 'index']);
+    Route::post('partners', [PartnerIntegrationController::class, 'store']);
+    Route::patch('partners/{partner}', [PartnerIntegrationController::class, 'update']);
+    Route::get('partners/{partner}/webhooks', [PartnerIntegrationController::class, 'endpoints']);
+    Route::post('partners/{partner}/webhooks', [PartnerIntegrationController::class, 'storeEndpoint']);
+    Route::patch('partners/{partner}/webhooks/{endpoint}', [PartnerIntegrationController::class, 'updateEndpoint']);
+    Route::get('partners/{partner}/deliveries', [PartnerIntegrationController::class, 'deliveries']);
+    Route::get('subscription-plans', [SubscriptionManagementController::class, 'plans']);
+    Route::post('subscription-plans', [SubscriptionManagementController::class, 'savePlan']);
+    Route::put('subscription-plans/{plan}', [SubscriptionManagementController::class, 'savePlan']);
+    Route::get('subscriptions', [SubscriptionManagementController::class, 'subscriptions']);
+    Route::post('subscriptions', [SubscriptionManagementController::class, 'assign']);
+    Route::post('subscriptions/{subscription}/invoices', [SubscriptionManagementController::class, 'createInvoice']);
+    Route::post('subscription-invoices/{invoice}/record-payment', [SubscriptionManagementController::class, 'recordPayment']);
+    Route::post('customers/{customer}/portal-invitation', [CustomerPortalController::class, 'invite']);
+});
+
+Route::middleware(['partner.api', 'throttle:120,1'])->prefix('partner/v1')->group(function () {
+    Route::get('catalog', [PartnerIntegrationController::class, 'partnerCatalog'])->middleware('partner.scope:catalog:read');
+    Route::get('orders/{orderNo}', [PartnerIntegrationController::class, 'partnerOrder'])->middleware('partner.scope:orders:read');
+    Route::post('orders', [PartnerIntegrationController::class, 'partnerCreateOrder'])->middleware('partner.scope:orders:write');
+});
+
+Route::prefix('customer-portal')->group(function () {
+    Route::post('redeem-invitation', [CustomerPortalController::class, 'redeem'])->middleware('throttle:5,1');
+    Route::post('login', [CustomerPortalController::class, 'login'])->middleware('throttle:8,1');
+    Route::middleware('customer.portal')->group(function () {
+        Route::post('logout', [CustomerPortalController::class, 'logout']);
+        Route::get('dashboard', [CustomerPortalController::class, 'dashboard']);
+        Route::get('orders', [CustomerPortalController::class, 'orders']);
+        Route::get('invoices', [CustomerPortalController::class, 'invoices']);
+        Route::post('orders', [CustomerPortalController::class, 'placeOrder'])->middleware('throttle:10,1');
+    });
+});
+
+Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('notifications')->group(function () {
+    Route::get('/', [NotificationCenterController::class, 'index']);
+    Route::post('announcements', [NotificationCenterController::class, 'storeAnnouncement'])->middleware('role:admin');
+    Route::patch('{notification}/read', [NotificationCenterController::class, 'markRead']);
+    Route::post('read-all', [NotificationCenterController::class, 'markAllRead']);
+});
+
+/* ---------------- Stage 9: production readiness and operational assurance ---------------- */
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('system-readiness')->group(function () {
+    Route::get('overview', [SystemHealthController::class, 'overview']);
+    Route::post('run-checks', [SystemHealthController::class, 'runChecks']);
+    Route::get('releases', [SystemHealthController::class, 'releases']);
+    Route::post('releases', [SystemHealthController::class, 'storeRelease']);
+    Route::get('recovery-drills', [SystemHealthController::class, 'recoveryDrills']);
+    Route::post('recovery-drills', [SystemHealthController::class, 'storeRecoveryDrill']);
+    Route::get('security-events', [SystemHealthController::class, 'securityEvents']);
 });

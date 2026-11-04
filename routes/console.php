@@ -20,3 +20,8 @@ Schedule::command('store:send-refill-reminders')->dailyAt('10:00')->withoutOverl
 
 // Keep supplier contract status aligned with its validity period.
 Schedule::command('store:expire-supplier-contracts')->dailyAt('00:20')->withoutOverlapping();
+
+
+// Enterprise ecosystem delivery and production-readiness monitoring.
+Schedule::command('partners:deliver-webhooks')->everyMinute()->withoutOverlapping();
+Schedule::command('system:health-check')->hourly()->withoutOverlapping();

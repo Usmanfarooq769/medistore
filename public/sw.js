@@ -18,3 +18,27 @@ self.addEventListener('fetch', event => {
     })));
   }
 });
+
+self.addEventListener('push', event => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = { body: event.data?.text() || '' }; }
+  const title = payload.title || 'MediStore notification';
+  const options = {
+    body: payload.body || 'You have a new pharmacy notification.',
+    icon: '/medistore-icon-192.png',
+    badge: '/medistore-icon-192.png',
+    data: { url: payload.url || '/mobile' },
+    tag: payload.tag || 'medistore-notification'
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const requested = new URL(event.notification.data?.url || '/mobile', self.location.origin);
+  const target = requested.origin === self.location.origin ? requested.href : new URL('/mobile', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+    const existing = clients.find(client => client.url === target);
+    return existing ? existing.focus() : self.clients.openWindow(target);
+  }));
+});

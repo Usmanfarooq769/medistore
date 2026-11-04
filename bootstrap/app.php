@@ -15,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
          $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'partner.api' => \App\Http\Middleware\PartnerApiAuthentication::class,
+            'partner.scope' => \App\Http\Middleware\PartnerApiScope::class,
+            'customer.portal' => \App\Http\Middleware\CustomerPortalAuthentication::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
