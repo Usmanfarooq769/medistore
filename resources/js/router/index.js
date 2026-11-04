@@ -8,6 +8,7 @@ const admin = { admin: true };
 const routes = [
     { path: '/login', component: () => import('../pages/Login.vue'), meta: { guest: true, blank: true } },
     { path: '/customer-portal', component: () => import('../pages/CustomerPortal.vue'), meta: { public: true, blank: true, title: 'Customer Portal' } },
+    { path: '/shop', component: () => import('../pages/Storefront.vue'), meta: { public: true, blank: true, title: 'Online Pharmacy' } },
     { path: '/', component: Blank },
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },

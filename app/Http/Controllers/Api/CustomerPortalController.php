@@ -96,13 +96,12 @@ class CustomerPortalController extends Controller
             foreach($data['items'] as $line){
                 $medicine=DB::table('medicines')->where('id',$line['medicine_id'])->where('is_active',true)->first();
                 if(!$medicine || ($medicine->requires_prescription ?? false) || ($medicine->requires_controlled_tracking ?? false)) throw ValidationException::withMessages(['items'=>'Prescription-only or controlled medicines must be handled by pharmacy staff.']);
-                $stock=(int)DB::table('medicine_batches')->where('medicine_id',$medicine->id)->where('branch_id',$branch->id)->where('quantity','>',0)->where('is_quarantined',false)->where(fn($q)=>$q->whereNull('expiry_date')->orWhere('expiry_date','>=',today()))->sum('quantity');
-                if($stock<$line['quantity']) throw ValidationException::withMessages(['items'=>"Insufficient stock for {$medicine->name}."]);
                 $total=round((float)$medicine->sale_price*(int)$line['quantity'],2);$subtotal+=$total;
                 $lines[]=['medicine_id'=>$medicine->id,'quantity'=>$line['quantity'],'unit_price'=>$medicine->sale_price,'line_total'=>$total];
             }
             $id=DB::table('online_orders')->insertGetId(['order_no'=>'CP-'.now()->format('ymd').'-'.Str::upper(Str::random(7)),'branch_id'=>$branch->id,'customer_id'=>$customer->id,'customer_name'=>$customer->name,'customer_phone'=>$customer->phone,'delivery_address'=>$data['delivery_address'],'channel'=>'web','status'=>'pending','subtotal'=>$subtotal,'discount'=>0,'total'=>$subtotal,'customer_note'=>'Customer portal order','created_at'=>now(),'updated_at'=>now()]);
             foreach($lines as $line) DB::table('online_order_items')->insert($line+['online_order_id'=>$id,'created_at'=>now(),'updated_at'=>now()]);
+            app(\App\Services\OnlineOrderInventoryService::class)->reserve($id, $branch->id, $lines, 30);
             return DB::table('online_orders')->find($id);
         });
         $webhooks->queue('order.created',['order_no'=>$order->order_no,'branch_id'=>$order->branch_id,'customer_id'=>$customer->id,'total'=>$order->total]);

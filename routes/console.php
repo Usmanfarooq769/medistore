@@ -25,3 +25,6 @@ Schedule::command('store:expire-supplier-contracts')->dailyAt('00:20')->withoutO
 // Enterprise ecosystem delivery and production-readiness monitoring.
 Schedule::command('partners:deliver-webhooks')->everyMinute()->withoutOverlapping();
 Schedule::command('system:health-check')->hourly()->withoutOverlapping();
+
+// Release stale online-order stock holds and cancel unconfirmed expired requests.
+Schedule::command('store:expire-order-reservations')->everyMinute()->withoutOverlapping();

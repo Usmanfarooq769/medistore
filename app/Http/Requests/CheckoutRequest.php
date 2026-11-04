@@ -31,6 +31,7 @@ class CheckoutRequest extends FormRequest
             'paid'             => 'required|numeric|min:0',
             'payment_method'   => 'required|in:cash,card,online,credit',
             'note'             => 'nullable|string|max:255',
+            'online_order_id'  => 'nullable|integer|exists:online_orders,id',
         ];
     }
 }

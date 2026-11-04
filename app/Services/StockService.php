@@ -50,32 +50,68 @@ class StockService
     }
 
     /** Stock OUT for sale – FEFO (first expiry first out), expired batches skipped */
-    public function deductFefo(Medicine $medicine, int $qty, string $reference): array
+    public function deductFefo(Medicine $medicine, int $qty, string $reference, ?int $reservationOrderId = null): array
     {
         if (! $medicine->stock_units_are_base && (int) $medicine->pack_size > 1) {
             throw ValidationException::withMessages(['items' => "Convert legacy pack stock to individual units for {$medicine->display_name} before selling."]);
         }
         $batches = $medicine->sellableBatches()->where('branch_id', BranchContext::id())->lockForUpdate()->get();
-        $available = (int) $batches->sum('quantity');
-
-        if ($available < $qty) {
-            throw ValidationException::withMessages([
-                'items' => "Insufficient stock for {$medicine->display_name}. Available (non-expired): {$available}",
-            ]);
-        }
-
         $allocations = [];
         $remaining = $qty;
-        foreach ($batches as $batch) {
-            if ($remaining <= 0) {
-                break;
+
+        // If this POS sale fulfils an online order, consume that order's reserved
+        // batch allocations first. Other POS transactions cannot use these units.
+        if ($reservationOrderId) {
+            $reservedRows = DB::table('online_order_reservations as r')
+                ->join('medicine_batches as b', 'b.id', '=', 'r.medicine_batch_id')
+                ->where('r.online_order_id', $reservationOrderId)
+                ->where('r.status', 'active')
+                ->where('b.medicine_id', $medicine->id)
+                ->where('b.branch_id', BranchContext::id())
+                ->where('b.quantity', '>', 0)
+                ->where('b.is_quarantined', false)
+                ->where(fn ($q) => $q->whereNull('b.expiry_date')->orWhereDate('b.expiry_date', '>=', today()))
+                ->orderByRaw('b.expiry_date IS NULL, b.expiry_date ASC')
+                ->select('r.id as reservation_id', 'r.quantity as reserved_quantity', 'b.id as batch_id')
+                ->lockForUpdate()->get();
+
+            foreach ($reservedRows as $row) {
+                if ($remaining <= 0) break;
+                $batch = $batches->firstWhere('id', $row->batch_id);
+                if (! $batch) continue;
+                $take = min((int) $row->reserved_quantity, (int) $batch->quantity, $remaining);
+                if ($take < 1) continue;
+                $batch->decrement('quantity', $take);
+                DB::table('online_order_reservations')->where('id', $row->reservation_id)->decrement('quantity', $take);
+                DB::table('online_order_reservations')->where('id', $row->reservation_id)->where('quantity', '<=', 0)->delete();
+                $this->reduceBinAllocations($batch->id, $take);
+                $remaining -= $take;
+                $allocations[] = [$batch, $take];
+                $this->log($medicine, -$take, $batch->id, 'sale', $reference, 'Fulfilled reserved online order', (int) $batch->branch_id);
             }
-            $take = min($batch->quantity, $remaining);
+        }
+
+        // Normal counter sales can only use stock not reserved by an active order.
+        foreach ($batches as $batch) {
+            if ($remaining <= 0) break;
+            $reserved = (int) DB::table('online_order_reservations')
+                ->where('medicine_batch_id', $batch->id)->where('status', 'active')
+                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+                ->sum('quantity');
+            $free = max(0, (int) $batch->quantity - $reserved);
+            $take = min($free, $remaining);
+            if ($take < 1) continue;
             $batch->decrement('quantity', $take);
             $this->reduceBinAllocations($batch->id, $take);
             $remaining -= $take;
             $allocations[] = [$batch, $take];
             $this->log($medicine, -$take, $batch->id, 'sale', $reference, null, (int) $batch->branch_id);
+        }
+
+        if ($remaining > 0) {
+            throw ValidationException::withMessages([
+                'items' => "Insufficient unreserved stock for {$medicine->display_name}. Please refresh available stock.",
+            ]);
         }
 
         return $allocations;
@@ -92,10 +128,18 @@ class StockService
             throw ValidationException::withMessages(['quantity' => "Convert legacy pack stock to individual units for {$medicine->display_name} before changing stock."]);
         }
 
-        if ($delta < 0 && $batch->quantity < abs($delta)) {
-            throw ValidationException::withMessages([
-                'quantity' => "Batch {$batch->batch_no} of {$medicine->display_name} has only {$batch->quantity} unit(s).",
-            ]);
+        if ($delta < 0) {
+            $reserved = DB::table('online_order_reservations')
+                ->where('medicine_batch_id', $batch->id)
+                ->where('status', 'active')
+                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+                ->sum('quantity');
+            $free = max(0, (int) $batch->quantity - (int) $reserved);
+            if ($free < abs($delta)) {
+                throw ValidationException::withMessages([
+                    'quantity' => "Batch {$batch->batch_no} of {$medicine->display_name} has only {$free} unreserved unit(s).",
+                ]);
+            }
         }
 
         $batch->increment('quantity', $delta);

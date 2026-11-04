@@ -47,15 +47,34 @@ class StageSixController extends Controller
 
     public function publicCatalog(Request $request)
     {
-        $data = $request->validate(['branch_id'=>'required|integer|exists:branches,id','search'=>'nullable|string|max:80']);
+        $data = $request->validate(['branch_id'=>'required|integer|exists:branches,id','search'=>'nullable|string|max:80','page'=>'nullable|integer|min:1']);
         $branch = Branch::whereKey($data['branch_id'])->where('is_active', true)->firstOrFail();
         $rows = Medicine::query()->where('is_active', true)
             ->where('requires_prescription', false)->where('requires_controlled_tracking', false)
             ->search($data['search'] ?? null)
-            ->withSum(['batches as available_stock' => fn($q) => $q->where('branch_id',$branch->id)->where('quantity','>',0)->where('is_quarantined',false)->where(fn($w)=>$w->whereNull('expiry_date')->orWhere('expiry_date','>=',today()))], 'quantity')
-            ->having('available_stock','>',0)->orderBy('name')->limit(60)
-            ->get(['id','name','generic_name','strength','unit','pack_size','sale_price','barcode']);
+            ->select('medicines.id','medicines.name','medicines.generic_name','medicines.strength','medicines.unit','medicines.pack_size','medicines.sale_price','medicines.barcode')
+            ->selectSub(function ($q) use ($branch) {
+                $q->from('medicine_batches as mb')->whereColumn('mb.medicine_id','medicines.id')->where('mb.branch_id',$branch->id)
+                    ->where('mb.quantity','>',0)->where('mb.is_quarantined',false)
+                    ->where(fn($w)=>$w->whereNull('mb.expiry_date')->orWhereDate('mb.expiry_date','>=',today()))
+                    ->selectRaw('COALESCE(SUM(mb.quantity - COALESCE((SELECT SUM(r.quantity) FROM online_order_reservations r WHERE r.medicine_batch_id = mb.id AND r.status = ? AND (r.expires_at IS NULL OR r.expires_at > ?)), 0)), 0)', ['active', now()]);
+            }, 'available_stock')
+            ->having('available_stock','>',0)->orderBy('name')->simplePaginate(30);
         return response()->json(['branch'=>$branch,'medicines'=>$rows]);
+    }
+
+    public function trackOnlineOrder(Request $request)
+    {
+        $data = $request->validate(['order_no' => 'required|string|max:50', 'phone' => 'required|string|max:40']);
+        $order = DB::table('online_orders')->where('order_no', $data['order_no'])
+            ->where('customer_phone', $data['phone'])->first();
+        abort_unless($order, 404, 'Order not found. Check the order number and phone number.');
+        return response()->json([
+            'order_no' => $order->order_no, 'status' => $order->status,
+            'total' => $order->total, 'created_at' => $order->created_at,
+            'items' => DB::table('online_order_items as i')->join('medicines as m','m.id','=','i.medicine_id')
+                ->where('i.online_order_id',$order->id)->get(['m.name','m.strength','i.quantity','i.unit_price','i.line_total']),
+        ]);
     }
 
     public function placeOnlineOrder(Request $request, PartnerWebhookService $webhooks)
@@ -75,8 +94,6 @@ class StageSixController extends Controller
                 if ($medicine->requires_prescription || $medicine->requires_controlled_tracking) {
                     throw ValidationException::withMessages(['items'=>'Prescription-only and controlled medicines cannot be ordered through the public storefront.']);
                 }
-                $available = (int) DB::table('medicine_batches')->where('medicine_id',$medicine->id)->where('branch_id',$branch->id)->where('quantity','>',0)->where('is_quarantined',false)->where(fn($q)=>$q->whereNull('expiry_date')->orWhere('expiry_date','>=',today()))->sum('quantity');
-                if ($available < (int)$line['quantity']) throw ValidationException::withMessages(['items'=>"Insufficient available stock for {$medicine->name}. Available: {$available}."]);
                 $price = (float) $medicine->sale_price;
                 $total = round($price * (int)$line['quantity'], 2);
                 $subtotal += $total;
@@ -91,6 +108,7 @@ class StageSixController extends Controller
                 'created_at'=>now(),'updated_at'=>now(),
             ]);
             foreach ($lines as $line) DB::table('online_order_items')->insert($line + ['online_order_id'=>$id,'created_at'=>now(),'updated_at'=>now()]);
+            app(\App\Services\OnlineOrderInventoryService::class)->reserve($id, $branch->id, $lines, 30);
             $order=DB::table('online_orders')->where('id',$id)->first();
             $webhooks->queue('order.created',['order_no'=>$order->order_no,'branch_id'=>$order->branch_id,'total'=>$order->total,'status'=>$order->status]);
             return response()->json(['message'=>'Order request received. The pharmacy will confirm availability before preparing it.','order_no'=>$order->order_no],201);
@@ -128,11 +146,13 @@ class StageSixController extends Controller
                     if (!$medicine || $medicine->requires_prescription || $medicine->requires_controlled_tracking) {
                         throw ValidationException::withMessages(['order'=>'An item is no longer eligible for public ordering. Please contact the customer.']);
                     }
-                    $stock=(int)DB::table('medicine_batches')->where('medicine_id',$item->medicine_id)->where('branch_id',$this->branch())->where('quantity','>',0)->where('is_quarantined',false)->where(fn($q)=>$q->whereNull('expiry_date')->orWhere('expiry_date','>=',today()))->sum('quantity');
-                    if ($stock < $item->quantity) throw ValidationException::withMessages(['order'=>'Stock changed since the order was submitted. Please contact the customer.']);
                 }
+                $activeReservations = DB::table('online_order_reservations')->where('online_order_id',$order)->where('status','active')->where(fn($q)=>$q->whereNull('expires_at')->orWhere('expires_at','>',now()))->count();
+                if ($activeReservations < 1) throw ValidationException::withMessages(['order'=>'The stock reservation expired. Cancel this order and ask the customer to place it again.']);
+                app(\App\Services\OnlineOrderInventoryService::class)->extend($order);
                 DB::table('online_orders')->where('id',$order)->update(['status'=>'confirmed','confirmed_by'=>auth()->id(),'confirmed_at'=>now(),'staff_note'=>$data['staff_note']??null,'updated_at'=>now()]);
             } else {
+                app(\App\Services\OnlineOrderInventoryService::class)->release($order);
                 DB::table('online_orders')->where('id',$order)->update(['status'=>'cancelled','staff_note'=>$data['staff_note']??null,'updated_at'=>now()]);
             }
             $this->logEvent('online_order_'.$data['decision'],'online_order',$order,$data);
@@ -150,11 +170,13 @@ class StageSixController extends Controller
         $sale=Sale::whereKey($data['sale_id'])->where('branch_id',$this->branch())->firstOrFail();
         if ($head->sale_id) throw ValidationException::withMessages(['sale_id'=>'A POS sale is already linked.']);
         if (DB::table('online_orders')->where('sale_id',$sale->id)->exists()) throw ValidationException::withMessages(['sale_id'=>'This POS sale is already linked to another online order.']);
-        $requested=DB::table('online_order_items')->where('online_order_id',$order)->get();
-        foreach ($requested as $line) {
-            $sold=(int)DB::table('sale_items')->where('sale_id',$sale->id)->where('medicine_id',$line->medicine_id)->sum('quantity');
-            if ($sold < (int)$line->quantity) throw ValidationException::withMessages(['sale_id'=>'The selected POS sale does not contain all medicines and quantities from this online order.']);
+        $requested=DB::table('online_order_items')->where('online_order_id',$order)->get()->keyBy('medicine_id');
+        $sold=DB::table('sale_items')->where('sale_id',$sale->id)->select('medicine_id',DB::raw('SUM(quantity) as quantity'))->groupBy('medicine_id')->get()->keyBy('medicine_id');
+        if ($requested->count() !== $sold->count()) throw ValidationException::withMessages(['sale_id'=>'The POS sale must contain exactly the same medicines as this online order.']);
+        foreach ($requested as $medicineId => $line) {
+            if ((int) ($sold[$medicineId]->quantity ?? 0) !== (int) $line->quantity) throw ValidationException::withMessages(['sale_id'=>'The POS sale quantities must exactly match this online order.']);
         }
+        DB::table('online_order_reservations')->where('online_order_id',$order)->where('status','active')->update(['status'=>'released','updated_at'=>now()]);
         DB::table('online_orders')->where('id',$order)->update(['sale_id'=>$sale->id,'status'=>'ready','updated_at'=>now()]);
         $this->logEvent('online_order_linked_to_sale','online_order',$order,['sale_id'=>$sale->id]);
         $webhooks->queue('order.sale_linked',['order_id'=>$order,'sale_id'=>$sale->id,'branch_id'=>$this->branch()]);

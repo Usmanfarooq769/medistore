@@ -304,6 +304,7 @@ Route::post('integrations/facilities/{facility}/prescriptions', [StageFiveContro
 /* ---------------- Stage 6: storefront, delivery, cold-chain and supplier operations ---------------- */
 Route::get('storefront/branches', [StageSixController::class, 'publicBranches'])->middleware('throttle:30,1');
 Route::get('storefront/catalog', [StageSixController::class, 'publicCatalog'])->middleware('throttle:60,1');
+Route::post('storefront/track-order', [StageSixController::class, 'trackOnlineOrder'])->middleware('throttle:15,1');
 Route::post('storefront/orders', [StageSixController::class, 'placeOnlineOrder'])->middleware('throttle:8,1');
 
 Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier'])->prefix('stage6')->group(function () {

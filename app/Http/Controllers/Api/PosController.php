@@ -84,6 +84,27 @@ class PosController extends Controller
         ]);
 
         $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user, $prescription, $taxProfile) {
+            $onlineOrder = null;
+            $onlineOrderItems = collect();
+            if (! empty($data['online_order_id'])) {
+                $onlineOrder = DB::table('online_orders')->where('id', $data['online_order_id'])->where('branch_id', BranchContext::id())->lockForUpdate()->first();
+                if (! $onlineOrder || $onlineOrder->status !== 'confirmed' || $onlineOrder->sale_id) {
+                    throw ValidationException::withMessages(['online_order_id' => 'This online order is not available for POS fulfilment.']);
+                }
+                $requested = DB::table('online_order_items')->where('online_order_id', $onlineOrder->id)->get()->keyBy('medicine_id');
+                $onlineOrderItems = $requested;
+                $entered = $lines->groupBy('id')->map(function ($group, $medicineId) {
+                    $medicine = Medicine::findOrFail($medicineId);
+                    return (int) $group->sum(fn ($line) => (int) $line['qty'] * ($line['sale_unit'] === 'pack' ? max(1, (int) $medicine->pack_size) : 1));
+                });
+                if ($requested->count() !== $entered->count()) throw ValidationException::withMessages(['online_order_id' => 'POS cart must exactly match the confirmed online order.']);
+                foreach ($requested as $medicineId => $row) {
+                    if ((int) ($entered[$medicineId] ?? 0) !== (int) $row->quantity) throw ValidationException::withMessages(['online_order_id' => 'POS quantities must exactly match the online order.']);
+                }
+                if (! empty($onlineOrder->customer_id)) $data['customer_id'] = $onlineOrder->customer_id;
+                $data['customer_name'] = $onlineOrder->customer_name;
+                $data['customer_phone'] = $onlineOrder->customer_phone;
+            }
             if ($prescription) { $prescription = Prescription::with('items')->lockForUpdate()->findOrFail($prescription->id); if ($prescription->status !== 'approved') throw ValidationException::withMessages(['prescription_id' => 'Prescription has already been dispensed or is no longer approved.']); }
             $session = \App\Models\CashierSession::where('branch_id', BranchContext::id())->where('user_id', $user->id)->whereNull('closed_at')->latest('id')->first();
             if ($user->role === 'cashier' && ! $session) throw ValidationException::withMessages(['cashier_session' => 'Open your cashier shift before taking sales.']);
@@ -96,8 +117,10 @@ class PosController extends Controller
                 $packSize = max(1, (int) ($medicine->pack_size ?? 1));
                 $factor = $line['sale_unit'] === 'pack' ? $packSize : 1;
                 $baseQty = $line['qty'] * $factor;
-                foreach ($this->stock->deductFefo($medicine, $baseQty, $invoice) as [$batch, $qty]) {
-                    $enteredPrice = $allowPriceEdit && $line['price'] !== null ? (float) $line['price'] : (float) $batch->sale_price * $factor;
+                foreach ($this->stock->deductFefo($medicine, $baseQty, $invoice, $onlineOrder?->id) as [$batch, $qty]) {
+                    $enteredPrice = $onlineOrder
+                        ? (float) ($onlineOrderItems[$medicine->id]->unit_price ?? $batch->sale_price) * $factor
+                        : ($allowPriceEdit && $line['price'] !== null ? (float) $line['price'] : (float) $batch->sale_price * $factor);
                     $price = $enteredPrice / $factor;
                     $total = round($price * $qty, 2);
                     $subtotal += $total;
@@ -244,6 +267,11 @@ class PosController extends Controller
                 }
             }
             app(JournalPostingService::class)->postSale($sale->load('items'));
+
+            if ($onlineOrder) {
+                DB::table('online_order_reservations')->where('online_order_id', $onlineOrder->id)->where('status', 'active')->update(['status' => 'consumed', 'quantity' => 0, 'updated_at' => now()]);
+                DB::table('online_orders')->where('id', $onlineOrder->id)->update(['sale_id' => $sale->id, 'status' => 'ready', 'updated_at' => now()]);
+            }
 
             return $sale;
         });
