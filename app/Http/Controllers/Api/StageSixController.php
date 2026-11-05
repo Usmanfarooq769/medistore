@@ -69,11 +69,14 @@ class StageSixController extends Controller
         $order = DB::table('online_orders')->where('order_no', $data['order_no'])
             ->where('customer_phone', $data['phone'])->first();
         abort_unless($order, 404, 'Order not found. Check the order number and phone number.');
+        $sale = $order->sale_id ? Sale::whereKey($order->sale_id)->where('branch_id', $order->branch_id)->first(['id','invoice_no','total','paid','due','payment_status']) : null;
+        $delivery = DB::table('delivery_jobs')->where('online_order_id', $order->id)->first(['driver_name','driver_phone','status','delivered_at']);
         return response()->json([
             'order_no' => $order->order_no, 'status' => $order->status,
-            'total' => $order->total, 'created_at' => $order->created_at,
+            'total' => $order->total, 'payment_method' => $order->payment_method ?? 'cash_on_delivery', 'payment_status' => $order->payment_status ?? 'pending', 'created_at' => $order->created_at,
+            'invoice_no' => $sale?->invoice_no, 'sale' => $sale, 'delivery' => $delivery,
             'items' => DB::table('online_order_items as i')->join('medicines as m','m.id','=','i.medicine_id')
-                ->where('i.online_order_id',$order->id)->get(['m.name','m.strength','i.quantity','i.unit_price','i.line_total']),
+                ->where('i.online_order_id',$order->id)->get(['m.name','m.strength','i.quantity','i.sale_unit','i.sale_quantity','i.pack_size','i.unit_price','i.line_total']),
         ]);
     }
 
@@ -83,36 +86,92 @@ class StageSixController extends Controller
             'branch_id'=>'required|integer|exists:branches,id', 'customer_name'=>'required|string|max:150',
             'customer_phone'=>'required|string|max:40', 'delivery_address'=>'required|string|max:1000',
             'channel'=>['nullable', Rule::in(['web','phone','whatsapp'])], 'customer_note'=>'nullable|string|max:1500',
+            'payment_method'=>['nullable', Rule::in(['cash_on_delivery','pay_at_store'])],
             'items'=>'required|array|min:1|max:30', 'items.*.medicine_id'=>'required|integer|distinct|exists:medicines,id',
-            'items.*.quantity'=>'required|integer|min:1|max:500',
+            'items.*.quantity'=>'required|integer|min:1|max:500', 'items.*.sale_unit'=>['required', Rule::in(['unit','pack'])],
         ]);
-        $branch = Branch::whereKey($data['branch_id'])->where('is_active',true)->firstOrFail();
-        return DB::transaction(function () use ($data, $branch, $webhooks) {
-            $subtotal = 0; $lines = [];
-            foreach ($data['items'] as $line) {
-                $medicine = Medicine::whereKey($line['medicine_id'])->where('is_active',true)->firstOrFail();
-                if ($medicine->requires_prescription || $medicine->requires_controlled_tracking) {
-                    throw ValidationException::withMessages(['items'=>'Prescription-only and controlled medicines cannot be ordered through the public storefront.']);
+
+        $idempotencyKey = trim((string) $request->header('Idempotency-Key', ''));
+        if ($idempotencyKey !== '' && ! preg_match('/^[A-Za-z0-9._:-]{12,100}$/', $idempotencyKey)) {
+            throw ValidationException::withMessages(['checkout' => 'Invalid checkout request key. Please refresh and try again.']);
+        }
+        $idempotencyKey = $idempotencyKey !== '' ? $idempotencyKey : null;
+        $payloadHash = hash('sha256', json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        if ($idempotencyKey) {
+            $existing = DB::table('online_orders')->where('idempotency_key', $idempotencyKey)->first();
+            if ($existing) {
+                if (! hash_equals((string) $existing->idempotency_payload_hash, $payloadHash)) {
+                    return response()->json(['message' => 'This checkout key was already used for different order details. Refresh the checkout and try again.'], 409);
                 }
-                $price = (float) $medicine->sale_price;
-                $total = round($price * (int)$line['quantity'], 2);
-                $subtotal += $total;
-                $lines[] = ['medicine_id'=>$medicine->id,'quantity'=>$line['quantity'],'unit_price'=>$price,'line_total'=>$total];
+                return response()->json(['message' => 'This order was already submitted.', 'order_no' => $existing->order_no], 200);
             }
-            $customer = DB::table('customers')->where('phone',$data['customer_phone'])->first();
-            $id = DB::table('online_orders')->insertGetId([
-                'order_no'=>'ON-'.now()->format('ymd').'-'.Str::upper(Str::random(7)), 'branch_id'=>$branch->id,
-                'customer_id'=>$customer?->id, 'customer_name'=>$data['customer_name'], 'customer_phone'=>$data['customer_phone'],
-                'delivery_address'=>$data['delivery_address'], 'channel'=>$data['channel'] ?? 'web', 'status'=>'pending',
-                'subtotal'=>$subtotal, 'discount'=>0, 'total'=>$subtotal, 'customer_note'=>$data['customer_note'] ?? null,
-                'created_at'=>now(),'updated_at'=>now(),
-            ]);
-            foreach ($lines as $line) DB::table('online_order_items')->insert($line + ['online_order_id'=>$id,'created_at'=>now(),'updated_at'=>now()]);
-            app(\App\Services\OnlineOrderInventoryService::class)->reserve($id, $branch->id, $lines, 30);
-            $order=DB::table('online_orders')->where('id',$id)->first();
-            $webhooks->queue('order.created',['order_no'=>$order->order_no,'branch_id'=>$order->branch_id,'total'=>$order->total,'status'=>$order->status]);
-            return response()->json(['message'=>'Order request received. The pharmacy will confirm availability before preparing it.','order_no'=>$order->order_no],201);
-        });
+        }
+
+        $branch = Branch::whereKey($data['branch_id'])->where('is_active', true)->firstOrFail();
+        try {
+            return DB::transaction(function () use ($data, $branch, $webhooks, $idempotencyKey, $payloadHash) {
+                $subtotal = 0;
+                $lines = [];
+                foreach ($data['items'] as $line) {
+                    $medicine = Medicine::whereKey($line['medicine_id'])->where('is_active', true)->firstOrFail();
+                    if ($medicine->requires_prescription || $medicine->requires_controlled_tracking) {
+                        throw ValidationException::withMessages(['items' => 'Prescription-only and controlled medicines cannot be ordered through the public storefront.']);
+                    }
+                    $packSize = max(1, (int) ($medicine->pack_size ?? 1));
+                    $saleUnit = $line['sale_unit'];
+                    $saleQuantity = (int) $line['quantity'];
+                    $baseQuantity = $saleQuantity * ($saleUnit === 'pack' ? $packSize : 1);
+                    $baseUnitPrice = round((float) $medicine->sale_price / $packSize, 4);
+                    $lineTotal = round($baseUnitPrice * $baseQuantity, 2);
+                    $subtotal += $lineTotal;
+                    $lines[] = [
+                        'medicine_id' => $medicine->id,
+                        'quantity' => $baseQuantity,
+                        'sale_unit' => $saleUnit,
+                        'sale_quantity' => $saleQuantity,
+                        'pack_size' => $packSize,
+                        'unit_price' => $baseUnitPrice,
+                        'line_total' => $lineTotal,
+                    ];
+                }
+                $customer = DB::table('customers')->where('phone', $data['customer_phone'])->first();
+                $id = DB::table('online_orders')->insertGetId([
+                    'order_no' => 'ON-' . now()->format('ymd') . '-' . Str::upper(Str::random(7)),
+                    'branch_id' => $branch->id,
+                    'customer_id' => $customer?->id,
+                    'customer_name' => $data['customer_name'],
+                    'customer_phone' => $data['customer_phone'],
+                    'delivery_address' => $data['delivery_address'],
+                    'channel' => $data['channel'] ?? 'web',
+                    'status' => 'pending',
+                    'subtotal' => $subtotal,
+                    'discount' => 0,
+                    'total' => $subtotal,
+                    'payment_method' => $data['payment_method'] ?? 'cash_on_delivery',
+                    'payment_status' => 'pending',
+                    'customer_note' => $data['customer_note'] ?? null,
+                    'idempotency_key' => $idempotencyKey,
+                    'idempotency_payload_hash' => $idempotencyKey ? $payloadHash : null,
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+                foreach ($lines as $line) {
+                    DB::table('online_order_items')->insert($line + ['online_order_id' => $id, 'created_at' => now(), 'updated_at' => now()]);
+                }
+                app(\App\Services\OnlineOrderInventoryService::class)->reserve($id, $branch->id, $lines, 30);
+                $order = DB::table('online_orders')->where('id', $id)->first();
+                $webhooks->queue('order.created', ['order_no' => $order->order_no, 'branch_id' => $order->branch_id, 'total' => $order->total, 'status' => $order->status]);
+                return response()->json(['message' => 'Order request received. The pharmacy will confirm availability before preparing it.', 'order_no' => $order->order_no], 201);
+            });
+        } catch (\Illuminate\Database\QueryException $e) {
+            if ($idempotencyKey) {
+                $existing = DB::table('online_orders')->where('idempotency_key', $idempotencyKey)->first();
+                if ($existing && hash_equals((string) $existing->idempotency_payload_hash, $payloadHash)) {
+                    return response()->json(['message' => 'This order was already submitted.', 'order_no' => $existing->order_no], 200);
+                }
+            }
+            throw $e;
+        }
     }
 
     public function onlineOrders(Request $request)
@@ -127,8 +186,9 @@ class StageSixController extends Controller
     {
         $head = DB::table('online_orders')->where('id',$order)->where('branch_id',$this->branch())->first();
         abort_unless($head,404);
-        $head->items = DB::table('online_order_items as i')->join('medicines as m','m.id','=','i.medicine_id')->where('i.online_order_id',$order)->get(['i.*','m.name as medicine_name','m.strength']);
+        $head->items = DB::table('online_order_items as i')->join('medicines as m','m.id','=','i.medicine_id')->where('i.online_order_id',$order)->get(['i.*','m.name as medicine_name','m.strength','m.unit as medicine_unit']);
         $head->delivery = DB::table('delivery_jobs')->where('online_order_id',$order)->first();
+        $head->sale = $head->sale_id ? Sale::where('id', $head->sale_id)->where('branch_id', $this->branch())->first(['id','invoice_no','total','paid','due','payment_status']) : null;
         return response()->json($head);
     }
 
@@ -147,8 +207,10 @@ class StageSixController extends Controller
                         throw ValidationException::withMessages(['order'=>'An item is no longer eligible for public ordering. Please contact the customer.']);
                     }
                 }
-                $activeReservations = DB::table('online_order_reservations')->where('online_order_id',$order)->where('status','active')->where(fn($q)=>$q->whereNull('expires_at')->orWhere('expires_at','>',now()))->count();
-                if ($activeReservations < 1) throw ValidationException::withMessages(['order'=>'The stock reservation expired. Cancel this order and ask the customer to place it again.']);
+                $reservedByBatch = DB::table('online_order_reservations')->where('online_order_id',$order)->where('status','active')->where(fn($q)=>$q->whereNull('expires_at')->orWhere('expires_at','>',now()))->select('medicine_batch_id', DB::raw('SUM(quantity) as qty'))->groupBy('medicine_batch_id')->get();
+                $reservedTotal = (int) $reservedByBatch->sum('qty');
+                $requiredTotal = (int) DB::table('online_order_items')->where('online_order_id',$order)->sum('quantity');
+                if ($requiredTotal < 1 || $reservedTotal < $requiredTotal) throw ValidationException::withMessages(['order'=>'The stock reservation expired or is incomplete. Cancel this order and ask the customer to place it again.']);
                 app(\App\Services\OnlineOrderInventoryService::class)->extend($order);
                 DB::table('online_orders')->where('id',$order)->update(['status'=>'confirmed','confirmed_by'=>auth()->id(),'confirmed_at'=>now(),'staff_note'=>$data['staff_note']??null,'updated_at'=>now()]);
             } else {

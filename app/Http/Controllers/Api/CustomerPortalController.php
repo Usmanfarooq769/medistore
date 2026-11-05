@@ -89,7 +89,7 @@ class CustomerPortalController extends Controller
     {
         $account=$request->attributes->get('customer_portal_account');
         $customer=DB::table('customers')->find($account->customer_id);
-        $data=$request->validate(['branch_id'=>'required|integer|exists:branches,id','delivery_address'=>'required|string|max:1000','items'=>'required|array|min:1|max:30','items.*.medicine_id'=>'required|integer|distinct|exists:medicines,id','items.*.quantity'=>'required|integer|min:1|max:500']);
+        $data=$request->validate(['branch_id'=>'required|integer|exists:branches,id','delivery_address'=>'required|string|max:1000','items'=>'required|array|min:1|max:30','items.*.medicine_id'=>'required|integer|distinct|exists:medicines,id','items.*.quantity'=>'required|integer|min:1|max:500','payment_method'=>['nullable', \Illuminate\Validation\Rule::in(['cash_on_delivery','pay_at_store'])]]);
         $branch=DB::table('branches')->where('id',$data['branch_id'])->where('is_active',true)->first(); abort_unless($branch,404);
         $order=DB::transaction(function () use ($data,$customer,$branch) {
             $lines=[];$subtotal=0;
@@ -99,7 +99,7 @@ class CustomerPortalController extends Controller
                 $total=round((float)$medicine->sale_price*(int)$line['quantity'],2);$subtotal+=$total;
                 $lines[]=['medicine_id'=>$medicine->id,'quantity'=>$line['quantity'],'unit_price'=>$medicine->sale_price,'line_total'=>$total];
             }
-            $id=DB::table('online_orders')->insertGetId(['order_no'=>'CP-'.now()->format('ymd').'-'.Str::upper(Str::random(7)),'branch_id'=>$branch->id,'customer_id'=>$customer->id,'customer_name'=>$customer->name,'customer_phone'=>$customer->phone,'delivery_address'=>$data['delivery_address'],'channel'=>'web','status'=>'pending','subtotal'=>$subtotal,'discount'=>0,'total'=>$subtotal,'customer_note'=>'Customer portal order','created_at'=>now(),'updated_at'=>now()]);
+            $id=DB::table('online_orders')->insertGetId(['order_no'=>'CP-'.now()->format('ymd').'-'.Str::upper(Str::random(7)),'branch_id'=>$branch->id,'customer_id'=>$customer->id,'customer_name'=>$customer->name,'customer_phone'=>$customer->phone,'delivery_address'=>$data['delivery_address'],'channel'=>'web','status'=>'pending','subtotal'=>$subtotal,'discount'=>0,'total'=>$subtotal,'payment_method'=>$data['payment_method'] ?? 'cash_on_delivery','payment_status'=>'pending','customer_note'=>'Customer portal order','created_at'=>now(),'updated_at'=>now()]);
             foreach($lines as $line) DB::table('online_order_items')->insert($line+['online_order_id'=>$id,'created_at'=>now(),'updated_at'=>now()]);
             app(\App\Services\OnlineOrderInventoryService::class)->reserve($id, $branch->id, $lines, 30);
             return DB::table('online_orders')->find($id);
@@ -107,4 +107,84 @@ class CustomerPortalController extends Controller
         $webhooks->queue('order.created',['order_no'=>$order->order_no,'branch_id'=>$order->branch_id,'customer_id'=>$customer->id,'total'=>$order->total]);
         return response()->json(['message'=>'Order request submitted. The pharmacy must confirm it before preparation.','order_no'=>$order->order_no],201);
     }
+
+    public function invoiceDetails(Request $request, int $sale)
+    {
+        $account = $request->attributes->get('customer_portal_account');
+        $head = DB::table('sales')->where('id', $sale)->where('customer_id', $account->customer_id)->first();
+        abort_unless($head, 404);
+        $head->items = DB::table('sale_items')->where('sale_id', $head->id)
+            ->get(['id', 'medicine_name', 'batch_no', 'quantity', 'returned_qty', 'price', 'total']);
+        return response()->json($head);
+    }
+
+    public function returnRequests(Request $request)
+    {
+        $account = $request->attributes->get('customer_portal_account');
+        return response()->json(DB::table('customer_return_requests as r')
+            ->join('sales as s', 's.id', '=', 'r.sale_id')
+            ->where('r.customer_id', $account->customer_id)
+            ->orderByDesc('r.id')->select('r.*', 's.invoice_no')->paginate(20));
+    }
+
+    public function createReturnRequest(Request $request)
+    {
+        $account = $request->attributes->get('customer_portal_account');
+        $data = $request->validate([
+            'sale_id' => ['required', 'integer'],
+            'reason' => ['required', 'string', 'max:120'],
+            'customer_note' => ['nullable', 'string', 'max:1500'],
+            'items' => ['required', 'array', 'min:1', 'max:20'],
+            'items.*.sale_item_id' => ['required', 'integer', 'distinct'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        $created = DB::transaction(function () use ($data, $account) {
+            $sale = DB::table('sales')->where('id', $data['sale_id'])
+                ->where('customer_id', $account->customer_id)->lockForUpdate()->first();
+            if (! $sale) abort(404);
+            $returnDays = max(0, (int) setting('return_days', 30));
+            if ($returnDays > 0 && max(0, \Illuminate\Support\Carbon::parse($sale->sale_date)->startOfDay()->diffInDays(now()->startOfDay())) > $returnDays) {
+                throw ValidationException::withMessages(['sale_id' => 'The return period for this invoice has expired.']);
+            }
+
+            $requestId = DB::table('customer_return_requests')->insertGetId([
+                'request_no' => 'CRQ-' . now()->format('Ymd') . '-' . Str::upper(Str::random(6)),
+                'customer_id' => $account->customer_id,
+                'sale_id' => $sale->id,
+                'branch_id' => $sale->branch_id,
+                'status' => 'pending',
+                'reason' => $data['reason'],
+                'customer_note' => $data['customer_note'] ?? null,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+            foreach ($data['items'] as $line) {
+                $saleItem = DB::table('sale_items')->where('id', $line['sale_item_id'])
+                    ->where('sale_id', $sale->id)->lockForUpdate()->first();
+                if (! $saleItem) throw ValidationException::withMessages(['items' => 'One selected item does not belong to this invoice.']);
+
+                $alreadyRequested = (int) DB::table('customer_return_request_items as ri')
+                    ->join('customer_return_requests as rr', 'rr.id', '=', 'ri.customer_return_request_id')
+                    ->where('ri.sale_item_id', $saleItem->id)
+                    ->whereIn('rr.status', ['pending', 'approved'])
+                    ->sum('ri.quantity');
+                $available = max(0, (int) $saleItem->quantity - (int) $saleItem->returned_qty - $alreadyRequested);
+                if ($line['quantity'] > $available) {
+                    throw ValidationException::withMessages(['items' => "Only {$available} additional unit(s) can be requested for {$saleItem->medicine_name}."]);
+                }
+
+                DB::table('customer_return_request_items')->insert([
+                    'customer_return_request_id' => $requestId,
+                    'sale_item_id' => $saleItem->id,
+                    'quantity' => $line['quantity'],
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+            return DB::table('customer_return_requests')->where('id', $requestId)->first();
+        });
+
+        return response()->json(['message' => 'Return request submitted for pharmacy review.', 'request_no' => $created->request_no], 201);
+    }
+
 }

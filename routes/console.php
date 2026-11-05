@@ -8,23 +8,20 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Send the store's daily closing report to the configured super-admin email.
-Schedule::command('store:daily-report')->dailyAt('23:59')->withoutOverlapping();
+$tenantMode = config('tenancy.mode', 'single') === 'saas';
+$scheduled = [
+    ['store:daily-report', fn ($event) => $event->dailyAt('23:59')],
+    ['store:whatsapp-stock-alerts', fn ($event) => $event->dailyAt('09:00')],
+    ['store:backup-cloud', fn ($event) => $event->dailyAt('02:00')],
+    ['store:send-refill-reminders', fn ($event) => $event->dailyAt('10:00')],
+    ['store:expire-supplier-contracts', fn ($event) => $event->dailyAt('00:20')],
+    ['partners:deliver-webhooks', fn ($event) => $event->everyMinute()],
+    ['system:health-check', fn ($event) => $event->hourly()],
+    ['store:expire-order-reservations', fn ($event) => $event->everyMinute()],
+];
 
-// Daily WhatsApp stock digest and encrypted off-site database backup.
-Schedule::command('store:whatsapp-stock-alerts')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('store:backup-cloud')->dailyAt('02:00')->withoutOverlapping();
-
-// Send due medicine refill reminders to customers who explicitly opted in.
-Schedule::command('store:send-refill-reminders')->dailyAt('10:00')->withoutOverlapping();
-
-// Keep supplier contract status aligned with its validity period.
-Schedule::command('store:expire-supplier-contracts')->dailyAt('00:20')->withoutOverlapping();
-
-
-// Enterprise ecosystem delivery and production-readiness monitoring.
-Schedule::command('partners:deliver-webhooks')->everyMinute()->withoutOverlapping();
-Schedule::command('system:health-check')->hourly()->withoutOverlapping();
-
-// Release stale online-order stock holds and cancel unconfirmed expired requests.
-Schedule::command('store:expire-order-reservations')->everyMinute()->withoutOverlapping();
+foreach ($scheduled as [$command, $frequency]) {
+    $event = Schedule::command($tenantMode ? 'tenants:run ' . $command : $command);
+    $frequency($event);
+    $event->withoutOverlapping();
+}

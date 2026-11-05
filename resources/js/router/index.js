@@ -53,6 +53,7 @@ const routes = [
 
     // RETURNS
     { path: '/returns', component: () => import('../pages/returns/SaleReturns.vue'), meta: { title: 'Customer Returns' } },
+    { path: '/customer-return-requests', component: () => import('../pages/CustomerReturnRequests.vue'), meta: { title: 'Customer Return Requests', returnRequests: true } },
     { path: '/returns/new', component: () => import('../pages/returns/SaleReturnCreate.vue'), meta: { title: 'New Customer Return' } },
     { path: '/supplier-returns', component: () => import('../pages/returns/PurchaseReturns.vue'), meta: { ...admin, title: 'Returns to Supplier' } },
     { path: '/supplier-returns/new', component: () => import('../pages/returns/PurchaseReturnCreate.vue'), meta: { ...admin, title: 'New Return to Supplier' } },
@@ -100,6 +101,7 @@ router.beforeEach(async (to) => {
     if (to.meta.stage6 && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.quality && !['admin', 'branch_manager', 'pharmacist'].includes(auth.user?.role)) return '/mobile';
     if (to.meta.manager && !['admin', 'branch_manager'].includes(auth.user?.role)) return '/mobile';
+    if (to.meta.returnRequests && !['admin', 'branch_manager', 'pharmacist'].includes(auth.user?.role)) return '/mobile';
     return true;
 });
 

@@ -1,0 +1,20 @@
+# Single-company deployment (default)
+TENANCY_MODE=single
+
+# SaaS multi-company deployment only; use a separate central registry database.
+TENANCY_MODE=saas
+CENTRAL_DB_CONNECTION=mysql
+CENTRAL_DB_HOST=127.0.0.1
+CENTRAL_DB_PORT=3306
+CENTRAL_DB_DATABASE=medistore_central
+CENTRAL_DB_USERNAME=medistore_registry
+CENTRAL_DB_PASSWORD=CHANGE_ME
+TENANCY_CENTRAL_DOMAINS=admin.example.com,localhost,127.0.0.1
+
+# Production security / operations
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://shop.example.com
+SESSION_SECURE_COOKIE=true
+QUEUE_CONNECTION=redis
+CACHE_STORE=redis

@@ -39,8 +39,8 @@
                                     <td class="fw-semibold">{{ l.name }}</td>
                                     <td class="small">{{ l.batch_no || '—' }}<div :class="daysLeft(l.expiry_date) < 0 ? 'text-danger' : 'text-muted'">{{ date(l.expiry_date) }}</div></td>
                                     <td class="text-end">{{ money(l.price) }}</td>
-                                    <td class="text-center">{{ l.returnable }} <small class="text-muted">/ {{ l.sold }}</small></td>
-                                    <td><input v-model.number="l.quantity" type="number" min="0" :max="l.returnable" :disabled="!l.returnable" class="form-control form-control-sm" @input="clampQty(l, l.returnable)"></td>
+                                    <td class="text-center">{{ l.returnable }} <small class="text-muted">/ {{ l.sold }} individual units</small></td>
+                                    <td><select v-model="l.return_unit" class="form-select form-select-sm mb-1" :disabled="!l.returnable" @change="syncReturnQty(l)"><option value="unit">Individual tablets / units</option><option value="pack">Complete pack ({{ l.pack_size }})</option></select><input v-model.number="l.return_quantity" type="number" min="0" :max="returnMax(l)" :disabled="!l.returnable" class="form-control form-control-sm" @input="syncReturnQty(l)"><small class="text-muted">{{ l.quantity }} base units to stock</small></td>
                                     <td>
                                         <select v-model="l.condition" class="form-select form-select-sm" :disabled="!l.returnable">
                                             <option value="good">Good (restock)</option><option value="damaged">Damaged</option><option value="expired">Expired</option>
@@ -192,13 +192,15 @@ async function findInvoice() {
         const ratio = s.subtotal > 0 ? s.total / s.subtotal : 1;   // share invoice discount / tax
         sale.value = s;
         lines.value = s.items.map((i) => ({
-            sale_item_id: i.id, name: i.medicine_name, batch_no: i.batch_no, expiry_date: i.expiry_date,
+            sale_item_id: i.id, name: i.medicine_name, batch_no: i.batch_no, expiry_date: i.expiry_date, pack_size: Math.max(1, Number(i.pack_size || 1)), return_unit: i.sale_unit === 'pack' ? 'pack' : 'unit', return_quantity: 0,
             price: Math.round(i.price * ratio * 100) / 100, sold: i.quantity, returnable: i.returnable_qty, quantity: 0,
             condition: daysLeft(i.expiry_date) < 0 ? 'expired' : 'good',
         }));
     } catch (e) { /* shown */ } finally { finding.value = false; }
 }
-function returnAll() { lines.value.forEach((l) => { l.quantity = l.returnable; }); }
+function returnMax(l) { return l.return_unit === 'pack' ? Math.floor(l.returnable / l.pack_size) : l.returnable; }
+function syncReturnQty(l) { const max = returnMax(l); l.return_quantity = Math.max(0, Math.min(Math.floor(Number(l.return_quantity) || 0), max)); l.quantity = l.return_quantity * (l.return_unit === 'pack' ? l.pack_size : 1); }
+function returnAll() { lines.value.forEach((l) => { l.return_unit = 'unit'; l.return_quantity = l.returnable; l.quantity = l.returnable; }); }
 function clampQty(l, max) { if (l.quantity > max) l.quantity = max; if (l.quantity < 0) l.quantity = 0; }
 
 /* ---------- without invoice ---------- */

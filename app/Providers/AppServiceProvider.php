@@ -6,12 +6,21 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\AuditLog;
+use App\Services\TenantContext;
+use App\Services\TenantConnectionManager;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Support\Facades\Event;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         require_once app_path('helpers.php');
+        $this->app->singleton(TenantContext::class, fn () => new TenantContext());
     }
 
     private static function auditSafe(array $values): array
@@ -23,6 +32,26 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Paginator::useBootstrapFive();
+
+        // Carry tenant identity into queued jobs and restore the matching DB before job execution.
+        Queue::createPayloadUsing(function ($connection, $queue, $payload) {
+            $tenantId = app(TenantContext::class)->id();
+            return $tenantId ? ['tenant_id' => $tenantId] : [];
+        });
+        $activateJobTenant = function ($event) {
+            $tenantId = $event->job->payload()['tenant_id'] ?? null;
+            if (! $tenantId || config('tenancy.mode') !== 'saas') return;
+            $tenant = DB::connection('central')->table('tenant_companies')->where('id', (int) $tenantId)->where('status', 'active')->first();
+            if (! $tenant) throw new \RuntimeException('Queued job tenant is missing or inactive.');
+            app(TenantConnectionManager::class)->activate($tenant);
+        };
+        $restoreJobTenant = function () {
+            $manager = app(TenantConnectionManager::class);
+            if ($manager->isActive()) $manager->restore();
+        };
+        Event::listen(JobProcessing::class, $activateJobTenant);
+        Event::listen(JobProcessed::class, $restoreJobTenant);
+        Event::listen(JobExceptionOccurred::class, $restoreJobTenant);
 
         // Append-only audit trail for important master and transaction changes.
         $tracked = [

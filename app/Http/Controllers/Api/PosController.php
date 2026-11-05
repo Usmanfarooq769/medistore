@@ -270,7 +270,7 @@ class PosController extends Controller
 
             if ($onlineOrder) {
                 DB::table('online_order_reservations')->where('online_order_id', $onlineOrder->id)->where('status', 'active')->update(['status' => 'consumed', 'quantity' => 0, 'updated_at' => now()]);
-                DB::table('online_orders')->where('id', $onlineOrder->id)->update(['sale_id' => $sale->id, 'status' => 'ready', 'updated_at' => now()]);
+                DB::table('online_orders')->where('id', $onlineOrder->id)->update(['sale_id' => $sale->id, 'status' => 'ready', 'payment_status' => $sale->payment_status === 'paid' ? 'paid' : ($sale->payment_status === 'partial' ? 'partial' : 'pending'), 'updated_at' => now()]);
             }
 
             return $sale;

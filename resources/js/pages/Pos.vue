@@ -45,7 +45,7 @@
         <div class="col-lg-5 col-xl-4 h-100">
             <div class="card h-100 d-flex flex-column">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold"><i class="bi bi-cart3"></i> Cart <span class="badge bg-success">{{ totals.units }}</span></span>
+                    <span class="fw-semibold"><i class="bi bi-cart3"></i> Cart <span class="badge bg-success">{{ totals.units }}</span><span v-if="onlineOrderId" class="badge text-bg-primary ms-2">Online order {{ onlineOrderNo }}</span></span>
                     <div class="d-flex gap-1 position-relative">
                         <button class="btn btn-sm btn-outline-warning" title="Held sales" @click="heldOpen = !heldOpen"><i class="bi bi-pause-circle"></i> {{ held.length }}</button>
                         <div v-if="heldOpen" class="dropdown-menu show shadow" style="right:0; left:auto; top:110%; width:260px" @mouseleave="heldOpen = false">
@@ -77,10 +77,10 @@
                 </div>
 
                 <div class="px-3 pt-2">
-                    <div class="input-group input-group-sm"><input v-model.trim="promotionCode" class="form-control text-uppercase" placeholder="Coupon / promotion code" @keyup.enter="applyPromotion"><button class="btn btn-outline-primary" type="button" @click="applyPromotion">Apply</button></div>
+                    <div class="input-group input-group-sm"><input v-model.trim="promotionCode" :disabled="!!onlineOrderId" class="form-control text-uppercase" placeholder="Coupon / promotion code" @keyup.enter="applyPromotion"><button class="btn btn-outline-primary" type="button" :disabled="!!onlineOrderId" @click="applyPromotion">Apply</button></div>
                     <div v-if="promotion" class="small text-success mt-1"><i class="bi bi-check-circle"></i> {{ promotion.name }} applied: {{ money(promotion.discount) }}</div>
                     <div v-if="promotionError" class="small text-danger mt-1">{{ promotionError }}</div>
-                    <div v-if="customer && customer.loyalty_points > 0" class="d-flex align-items-center gap-2 mt-2"><label class="small text-nowrap">Redeem points</label><input v-model.number="redeemPoints" type="number" min="0" :max="customer.loyalty_points" class="form-control form-control-sm" style="max-width:110px"><span class="small text-muted">Available: {{ customer.loyalty_points }}</span></div>
+                    <div v-if="customer && customer.loyalty_points > 0" class="d-flex align-items-center gap-2 mt-2"><label class="small text-nowrap">Redeem points</label><input v-model.number="redeemPoints" type="number" min="0" :disabled="!!onlineOrderId" :max="customer.loyalty_points" class="form-control form-control-sm" style="max-width:110px"><span class="small text-muted">Available: {{ customer.loyalty_points }}</span></div>
                 </div>
 
                 <div class="cart-list mt-2">
@@ -88,14 +88,14 @@
                     <div v-for="(c, i) in cart" :key="c.id" class="cart-line">
                         <div class="flex-grow-1 min-w-0">
                             <div class="fw-semibold small text-truncate">{{ c.name }}</div>
-                            <select v-model="c.sale_unit" class="form-select form-select-sm my-1" style="max-width:125px" @change="changeSaleUnit(i)"><option value="pack">Pack ({{ c.packSize }} units)</option><option value="unit">Individual unit</option></select>
-                            <input v-if="priceEdit" v-model.number="c.price" type="number" step="0.01" min="0" class="form-control form-control-sm py-0" style="width:90px" @change="syncPackPrice(i)">
+                            <select v-model="c.sale_unit" class="form-select form-select-sm my-1" style="max-width:125px" :disabled="!!onlineOrderId" @change="changeSaleUnit(i)"><option value="pack">Pack ({{ c.packSize }} units)</option><option value="unit">Individual unit</option></select>
+                            <input v-if="priceEdit" v-model.number="c.price" type="number" step="0.01" min="0" :disabled="!!onlineOrderId" class="form-control form-control-sm py-0" style="width:90px" @change="syncPackPrice(i)">
                             <span v-else class="small text-muted">{{ money(c.price) }} / {{ c.sale_unit === 'pack' ? 'pack' : 'unit' }}</span>
                         </div>
                         <div class="qty-box">
-                            <button @click="dec(i)"><i v-if="c.qty <= 1" class="bi bi-trash text-danger"></i><span v-else>−</span></button>
-                            <input :value="c.qty" type="number" min="1" :max="c.stock" @change="setQty(i, $event.target.value)">
-                            <button :disabled="c.qty >= c.stock" @click="setQty(i, c.qty + 1)">+</button>
+                            <button :disabled="!!onlineOrderId" @click="dec(i)"><i v-if="c.qty <= 1" class="bi bi-trash text-danger"></i><span v-else>−</span></button>
+                            <input :value="c.qty" type="number" min="1" :max="c.stock" :disabled="!!onlineOrderId" @change="setQty(i, $event.target.value)">
+                            <button :disabled="!!onlineOrderId || c.qty >= c.stock" @click="setQty(i, c.qty + 1)">+</button>
                         </div>
                         <div class="text-end fw-semibold small" style="width:80px">{{ money(c.price * c.qty) }}</div>
                     </div>
@@ -106,14 +106,14 @@
                     <div class="d-flex justify-content-between align-items-center gap-2 mt-1">
                         <span class="small">Discount</span>
                         <div class="input-group input-group-sm" style="max-width:170px">
-                            <input v-model.number="discount" type="number" min="0" step="0.01" class="form-control text-end" placeholder="0">
+                            <input v-model.number="discount" type="number" min="0" step="0.01" :disabled="!!onlineOrderId" class="form-control text-end" placeholder="0">
                             <button class="btn btn-secondary" type="button" @click="discPct = !discPct">{{ discPct ? '%' : getCurrency() }}</button>
                         </div>
                     </div>
                     <div class="d-flex justify-content-between align-items-center gap-2 mt-1">
                         <span class="small">Tax</span>
-                        <select v-if="taxProfiles.length" v-model.number="taxProfileId" class="form-select form-select-sm" style="max-width:170px" @change="applyTaxProfile"><option :value="null">Manual ({{taxPercent}}%)</option><option v-for="t in taxProfiles" :key="t.id" :value="t.id">{{t.name}} ({{t.rate}}%)</option></select>
-                        <input v-else v-model.number="taxPercent" type="number" min="0" max="100" step="0.01" class="form-control form-control-sm text-end" style="max-width:170px">
+                        <select v-if="taxProfiles.length" v-model.number="taxProfileId" :disabled="!!onlineOrderId" class="form-select form-select-sm" style="max-width:170px" @change="applyTaxProfile"><option :value="null">Manual ({{taxPercent}}%)</option><option v-for="t in taxProfiles" :key="t.id" :value="t.id">{{t.name}} ({{t.rate}}%)</option></select>
+                        <input v-else v-model.number="taxPercent" type="number" min="0" max="100" step="0.01" :disabled="!!onlineOrderId" class="form-control form-control-sm text-end" style="max-width:170px">
                     </div>
                     <div class="d-flex justify-content-between fs-3 fw-bold text-success border-top mt-2 pt-1"><span>Total</span><span>{{ money(totals.total) }}</span></div>
                     <div class="btn-group w-100 my-2">
@@ -188,6 +188,8 @@ function applyTaxProfile(){ const selected=taxProfiles.value.find(x=>x.id===taxP
 const method = ref('cash');
 const paid = ref('');
 const busy = ref(false);
+const onlineOrderId = ref(route.query.online_order_id ? Number(route.query.online_order_id) : null);
+const onlineOrderNo = ref('');
 let controller = null;
 
 watch(cart, (v) => localStorage.setItem('pos_cart', JSON.stringify(v)), { deep: true });
@@ -356,20 +358,23 @@ async function checkout() {
             prescriptionId = rx.id;
         } catch (e) { return Swal.fire({ icon: 'error', title: 'Prescription not found', text: e.response?.data?.message || 'Check the prescription number.' }); }
     }
+    const isOnlineOrderSale = !!onlineOrderId.value;
     busy.value = true;
     try {
         const { data } = await api.post('/pos/checkout', {
-            items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })),
+            items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })), online_order_id: onlineOrderId.value,
             customer_id: customer.value?.id || null, prescription_id: prescriptionId,
             discount: t.manualDisc, promotion_code: promotionCode.value || null, redeem_points: Number(redeemPoints.value) || 0, tax_percent: t.tp, tax_profile_id: taxProfileId.value, paid: t.paid, payment_method: method.value,
         });
         resetSale();
+        onlineOrderId.value = null;
+        onlineOrderNo.value = '';
         loadProducts();
         stockChanged();
         const s = data.data;
         const low = data.low_stock?.length ? `<div class="alert alert-warning small py-2 mt-2 mb-0 text-start"><i class="bi bi-exclamation-triangle"></i> Low stock: ${data.low_stock.map((m) => `${esc(m.name)} (${m.total_stock})`).join(', ')}</div>` : '';
         const r = await Swal.fire({
-            icon: 'success', title: 'Sale completed',
+            icon: 'success', title: isOnlineOrderSale ? 'Online order sale completed' : 'Sale completed',
             html: `<div class="text-muted small">${esc(s.invoice_no)}</div><div class="display-6 fw-bold text-success">${money(s.change_amount)}</div>
                    <div class="small text-muted">change to return</div>${s.due > 0 ? `<div class="text-danger fw-semibold mt-1">Due added: ${money(s.due)}</div>` : ''}${low}`,
             showDenyButton: true, confirmButtonText: '<i class="bi bi-printer"></i> Print receipt', denyButtonText: 'New sale', confirmButtonColor: '#198754', denyButtonColor: '#6c757d',
@@ -396,6 +401,26 @@ onMounted(async () => {
     categories.value = (await api.get('/lookups')).data.categories;
     try { taxProfiles.value = await api.get('/tax-profiles').then(r=>r.data); const def=taxProfiles.value.find(x=>x.is_default); if(def){taxProfileId.value=def.id;taxPercent.value=Number(def.rate);} } catch(e) {}
     if (route.query.customer) { try { customer.value = (await api.get(`/customers/${route.query.customer}`)).data.data; } catch (e) { /* invalid customer link */ } }
+    if (onlineOrderId.value) {
+        try {
+            const { data: order } = await api.get(`/stage6/online-orders/${onlineOrderId.value}`);
+            if (order.status !== 'confirmed' || order.sale_id) throw new Error('This online order is not ready for POS processing.');
+            onlineOrderNo.value = order.order_no;
+            cart.value = order.items.map((item) => {
+                const packSize = Math.max(1, Number(item.pack_size || 1));
+                const packPrice = Number(item.unit_price) * packSize;
+                return { id: item.medicine_id, name: item.medicine_name, price: item.sale_unit === 'pack' ? packPrice : Number(item.unit_price), packPrice, stock: Number(item.quantity), packSize, unit: item.medicine_unit || 'unit', sale_unit: item.sale_unit || 'unit', qty: Number(item.sale_quantity || item.quantity), requiresPrescription: false };
+            });
+            discount.value = '';
+            promotionCode.value = '';
+            promotion.value = null;
+            redeemPoints.value = 0;
+            if (order.customer_id) { try { customer.value = (await api.get(`/customers/${order.customer_id}`)).data.data; } catch (e) {} }
+        } catch (e) {
+            onlineOrderId.value = null;
+            await Swal.fire({ icon: 'error', title: 'Unable to load online order', text: e.response?.data?.message || e.message || 'Please open the order again.' });
+        }
+    }
 });
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); controller?.abort(); });
 </script>

@@ -13,6 +13,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([__DIR__.'/../app/Console/Commands'])
     ->withMiddleware(function (Middleware $middleware) {
+         $middleware->prependToGroup('api', \App\Http\Middleware\ResolveTenant::class);
+         $middleware->prependToGroup('web', \App\Http\Middleware\ResolveTenant::class);
          $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'partner.api' => \App\Http\Middleware\PartnerApiAuthentication::class,

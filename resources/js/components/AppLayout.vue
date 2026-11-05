@@ -172,6 +172,7 @@ const menu = computed(() => {
         { section: 'Returns' },
         { to: '/returns/new', icon: 'bi-arrow-counterclockwise', label: 'New Customer Return' },
         { to: '/returns', icon: 'bi-arrow-return-left', label: 'Customer Returns' },
+        (a || manager || auth.user?.role === 'pharmacist') && { to: '/customer-return-requests', icon: 'bi-inbox', label: 'Online Return Requests' },
         a && { to: '/supplier-returns', icon: 'bi-truck-flatbed', label: 'Return to Supplier' },
         { section: 'Reports & alerts' },
         { to: '/reports/daily', icon: 'bi-calendar-check', label: 'Daily Closing' },

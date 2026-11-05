@@ -90,6 +90,11 @@ Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier
     Route::get('alerts/low-stock', [AlertController::class, 'lowStock']);
     Route::get('alerts/expiry', [AlertController::class, 'expiry']);
     Route::get('reports/daily', [ReportController::class, 'daily']);
+
+    // Customer self-service return requests; the actual inventory return is still posted through SaleReturnController.
+    Route::get('customer-return-requests', [\App\Http\Controllers\Api\CustomerReturnRequestController::class, 'index'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::post('customer-return-requests/{returnRequest}/review', [\App\Http\Controllers\Api\CustomerReturnRequestController::class, 'review'])->middleware('role:admin,branch_manager,pharmacist');
+    Route::post('customer-return-requests/{returnRequest}/complete', [\App\Http\Controllers\Api\CustomerReturnRequestController::class, 'complete'])->middleware('role:admin,branch_manager,pharmacist');
 });
 
 /* ---------------- Admin only ---------------- */
@@ -396,6 +401,9 @@ Route::prefix('customer-portal')->group(function () {
         Route::get('dashboard', [CustomerPortalController::class, 'dashboard']);
         Route::get('orders', [CustomerPortalController::class, 'orders']);
         Route::get('invoices', [CustomerPortalController::class, 'invoices']);
+        Route::get('invoices/{sale}', [CustomerPortalController::class, 'invoiceDetails']);
+        Route::get('return-requests', [CustomerPortalController::class, 'returnRequests']);
+        Route::post('return-requests', [CustomerPortalController::class, 'createReturnRequest'])->middleware('throttle:5,1');
         Route::post('orders', [CustomerPortalController::class, 'placeOrder'])->middleware('throttle:10,1');
     });
 });
