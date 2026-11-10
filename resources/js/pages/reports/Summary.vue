@@ -6,7 +6,7 @@
             <div class="col-auto d-flex gap-1">
                 <button class="chip" @click="preset('month')">This month</button><button class="chip" @click="preset('last')">Last month</button><button class="chip" @click="preset('year')">This year</button>
             </div>
-            <div class="col text-end"><button class="btn btn-success" onclick="window.print()"><i class="bi bi-printer"></i> Print</button></div>
+            <div class="col text-end"><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button></div>
         </div>
         <template v-if="r">
             <h5>{{ date(r.from) }} – {{ date(r.to) }}</h5>

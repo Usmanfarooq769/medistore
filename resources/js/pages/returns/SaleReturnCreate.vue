@@ -5,8 +5,8 @@
             <div class="card mb-3">
                 <div class="card-body d-flex flex-wrap gap-2 align-items-center justify-content-between">
                     <div class="btn-group return-mode">
-                        <button class="btn" :class="mode === 'invoice' ? 'btn-success' : 'btn-outline-secondary'" @click="switchMode('invoice')"><i class="bi bi-receipt"></i> With invoice</button>
-                        <button class="btn" :class="mode === 'manual' ? 'btn-success' : 'btn-outline-secondary'" @click="switchMode('manual')"><i class="bi bi-hand-index"></i> Without invoice</button>
+                        <button class="btn" :class="mode === 'invoice' ? 'btn-primary' : 'btn-outline-secondary'" @click="switchMode('invoice')"><i class="bi bi-receipt"></i> With invoice</button>
+                        <button class="btn" :class="mode === 'manual' ? 'btn-primary' : 'btn-outline-secondary'" @click="switchMode('manual')"><i class="bi bi-hand-index"></i> Without invoice</button>
                     </div>
                     <div class="small text-muted">
                         <span class="badge bg-success">Good</span> = back to stock ·

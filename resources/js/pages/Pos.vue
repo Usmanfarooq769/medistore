@@ -8,7 +8,7 @@
                         <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
                         <input ref="searchEl" v-model="q" class="form-control" placeholder="Search name / generic or scan barcode (F2)" autocomplete="off" @keydown="onSearchKey">
                         <button v-if="q" class="btn btn-outline-secondary" @click="q = ''"><i class="bi bi-x-lg"></i></button>
-                        <button class="btn btn-outline-success" type="button" title="Scan with camera" @click="cameraOpen = !cameraOpen"><i class="bi bi-camera"></i></button>
+                        <button class="btn btn-outline-primary" type="button" title="Scan with camera" @click="cameraOpen = !cameraOpen"><i class="bi bi-camera"></i></button>
                     </div>
                     <BarcodeScanner v-if="cameraOpen" class="mb-2" @detected="onCameraBarcode" @close="cameraOpen = false" />
                     <div class="chips">
@@ -117,7 +117,7 @@
                     </div>
                     <div class="d-flex justify-content-between fs-3 fw-bold text-success border-top mt-2 pt-1"><span>Total</span><span>{{ money(totals.total) }}</span></div>
                     <div class="btn-group w-100 my-2">
-                        <button v-for="m in methods" :key="m.key" class="btn btn-sm" :class="method === m.key ? 'btn-success' : 'btn-outline-secondary'" @click="setMethod(m.key)">
+                        <button v-for="m in methods" :key="m.key" class="btn btn-sm" :class="method === m.key ? 'btn-primary' : 'btn-outline-secondary'" @click="setMethod(m.key)">
                             <i :class="['bi', m.icon]"></i> {{ m.label }}</button>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
@@ -132,7 +132,7 @@
                         <span class="fw-semibold">{{ totals.change < 0 ? (customer ? 'Due (credit)' : 'Short by') : 'Change to return' }}</span>
                         <span class="fw-bold fs-5">{{ money(Math.abs(totals.change)) }}</span>
                     </div>
-                    <button class="btn btn-success btn-lg w-100 mt-2 fw-semibold" :disabled="busy || !cart.length" @click="checkout">
+                    <button class="btn btn-primary btn-lg w-100 mt-2 fw-semibold" :disabled="busy || !cart.length" @click="checkout">
                         <span v-if="busy" class="spinner-border spinner-border-sm me-1"></span><i v-else class="bi bi-check2-circle"></i> Pay {{ money(totals.total) }} (F9)
                     </button>
                 </div>

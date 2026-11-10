@@ -34,7 +34,7 @@
             <div class="text-center">Customer signature: ____________</div>
         </div>
         <div class="text-center no-print mb-4">
-            <button class="btn btn-success me-2" onclick="window.print()">Print</button>
+            <button class="btn btn-primary me-2" onclick="window.print()">Print</button>
             <button class="btn btn-secondary" onclick="window.close()">Close</button>
         </div>
     </div>

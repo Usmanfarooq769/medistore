@@ -5,7 +5,7 @@
             <input v-model="day" type="date" :max="today()" class="form-control w-auto">
             <button class="btn btn-outline-secondary" :disabled="day >= today()" @click="day = shiftDate(day, 1)"><i class="bi bi-chevron-right"></i></button>
             <button class="btn btn-light" @click="day = today()">Today</button>
-            <button class="btn btn-success ms-auto" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+            <button class="btn btn-primary ms-auto" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
         </div>
         <template v-if="r">
             <h5 class="mb-3">{{ auth.settings.store_name }} — {{ date(r.date) }}</h5>

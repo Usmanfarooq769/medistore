@@ -15,7 +15,7 @@
             <div class="col-md-6"><div class="card h-100"><div class="card-body"><div class="small text-muted">Credit limit</div><div class="fs-4 fw-bold">{{ c.credit_limit === null ? 'Unlimited' : money(c.credit_limit) }}</div><div v-if="c.credit_limit !== null" class="small text-muted">Available: {{ money(c.available_credit) }}</div></div></div></div>
         </div>
         <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center"><span class="fw-semibold">Purchase history</span><router-link :to="`/pos?customer=${c.id}`" class="btn btn-sm btn-success"><i class="bi bi-cart-plus"></i> Add Medicine / New Sale</router-link></div>
+            <div class="card-header d-flex justify-content-between align-items-center"><span class="fw-semibold">Purchase history</span><router-link :to="`/pos?customer=${c.id}`" class="btn btn-sm btn-primary"><i class="bi bi-cart-plus"></i> Add Medicine / New Sale</router-link></div>
             <DataTable ref="table" :url="`/customers/${c.id}/sales`" :cols="8">
                 <template #head><tr><th>Invoice</th><th>Date</th><th>Total</th><th>Paid</th><th>Due</th><th>Returned</th><th>Status</th><th></th></tr></template>
                 <template #row="{ item }">

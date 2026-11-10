@@ -26,7 +26,7 @@
                 </div></div>
             </div>
         </div></div>
-        <div class="col-12 text-end"><button class="btn btn-success btn-lg" :disabled="saving"><i class="bi bi-save"></i> Save settings</button></div>
+        <div class="col-12 text-end"><button class="btn btn-primary btn-lg" :disabled="saving"><i class="bi bi-save"></i> Save settings</button></div>
     </form>
 </template>
 

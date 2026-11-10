@@ -9,7 +9,7 @@
                 <div class="col-md-2"><select v-model="filters.status" class="form-select"><option value="">Any payment</option><option value="paid">Paid</option><option value="partial">Partial</option><option value="unpaid">Unpaid</option></select></div>
                 <div class="col-6 col-md-2"><input v-model="filters.from" type="date" class="form-control"></div>
                 <div class="col-6 col-md-1"><input v-model="filters.to" type="date" class="form-control"></div>
-                <div class="col-md-2 text-md-end"><router-link to="/purchases/create" class="btn btn-success"><i class="bi bi-plus-lg"></i> New</router-link></div>
+                <div class="col-md-2 text-md-end"><router-link to="/purchases/create" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New</router-link></div>
             </div>
         </div>
         <DataTable url="/purchases" :filters="filters" :cols="10">

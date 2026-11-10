@@ -17,7 +17,7 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span class="fw-semibold">Ledger</span>
                 <div class="d-flex gap-2">
-                    <router-link :to="`/purchases/create?supplier=${s.id}`" class="btn btn-sm btn-success"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link>
+                    <router-link :to="`/purchases/create?supplier=${s.id}`" class="btn btn-sm btn-primary"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link>
                     <router-link :to="`/supplier-returns/new?supplier=${s.id}`" class="btn btn-sm btn-outline-secondary"><i class="bi bi-truck-flatbed"></i> Return</router-link>
                     <button v-if="s.balance > 0" class="btn btn-sm btn-warning" @click="payOpen = true"><i class="bi bi-cash"></i> Pay</button>
                 </div>

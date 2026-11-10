@@ -78,7 +78,7 @@
                 <div class="mb-2"><label class="form-label small">Mobile number</label><input v-model.trim="customer.phone" class="form-control" required maxlength="40" placeholder="03xxxxxxxxx"></div>
                 <div class="mb-3"><label class="form-label small">Delivery address</label><textarea v-model.trim="customer.address" class="form-control" rows="2" required maxlength="1000"></textarea></div>
                 <div class="mb-2"><label class="form-label small">Payment method</label><select v-model="customer.payment_method" class="form-select"><option value="cash_on_delivery">Cash on delivery</option><option value="pay_at_store">Pay at pharmacy counter</option></select></div><div class="mb-3"><label class="form-label small">Order note (optional)</label><input v-model.trim="customer.note" class="form-control" maxlength="1500"></div>
-                <button class="btn btn-success w-100" type="submit" :disabled="sending || !cart.length || !branchId">{{ sending ? 'Submitting…' : 'Place order request' }}</button>
+                <button class="btn btn-primary w-100" type="submit" :disabled="sending || !cart.length || !branchId">{{ sending ? 'Submitting…' : 'Place order request' }}</button>
                 <p class="small text-muted mt-2 mb-0">Your stock is reserved for 30 minutes while the pharmacy reviews your request. Payment is collected using your selected method when the order is fulfilled. Online card payments are not enabled in this release.</p>
               </form>
             </div>

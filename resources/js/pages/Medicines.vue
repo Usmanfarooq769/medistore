@@ -21,7 +21,7 @@
                         </button>
                         <button class="btn btn-outline-primary" @click="$refs.csvInput.click()"><i class="bi bi-upload"></i> Import CSV</button>
                         <input ref="csvInput" type="file" accept=".csv,text/csv" class="d-none" @change="importCsv">
-                        <button class="btn btn-success" @click="openForm()"><i class="bi bi-plus-lg"></i> Add Medicine</button>
+                        <button class="btn btn-primary" @click="openForm()"><i class="bi bi-plus-lg"></i> Add Medicine</button>
                     </div>
                 </div>
                 <div class="border-top mt-3 pt-3">
@@ -74,7 +74,7 @@
                         </td>
                         <td>{{ m.rack || '—' }}</td>
                         <td class="text-end text-nowrap">
-                            <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-sm btn-outline-success" title="Purchase / add stock"><i class="bi bi-box-arrow-in-down"></i></router-link>
+                            <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-sm btn-outline-primary" title="Purchase / add stock"><i class="bi bi-box-arrow-in-down"></i></router-link>
                             <router-link :to="`/medicines/${m.id}`" class="btn btn-sm btn-outline-secondary ms-1" title="Stock card"><i class="bi bi-card-list"></i></router-link>
                             <button v-if="!m.stock_units_are_base" class="btn btn-sm btn-outline-warning ms-1" title="Convert legacy pack stock to individual units" @click="convertLegacyStock(m)"><i class="bi bi-arrow-left-right"></i></button>
                             <button class="btn btn-sm btn-outline-primary ms-1" title="Edit" @click="openForm(m)"><i class="bi bi-pencil"></i></button>
@@ -106,7 +106,7 @@
                 <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch me-3"><input id="rx" v-model="form.requires_prescription" class="form-check-input" type="checkbox"><label class="form-check-label" for="rx">Prescription required</label></div><div class="form-check form-switch"><input id="act" v-model="form.is_active" class="form-check-input" type="checkbox"><label class="form-check-label" for="act">Active</label></div></div>
                 <div class="col-12 text-end">
                     <button type="button" class="btn btn-light me-2" @click="show = false">Cancel</button>
-                    <button class="btn btn-success" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save</button>
+                    <button class="btn btn-primary" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save</button>
                 </div>
             </form>
         </Modal>

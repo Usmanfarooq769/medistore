@@ -12,7 +12,7 @@
             <template #cell-purchases_count="{ item }"><span class="badge bg-secondary">{{ item.purchases_count }}</span></template>
             <template #cell-balance="{ item }"><span class="fw-semibold" :class="item.balance > 0 ? 'text-danger' : 'text-success'">{{ money(item.balance) }}</span></template>
             <template #actions="{ item }">
-                <router-link :to="`/purchases/create?supplier=${item.id}`" class="btn btn-sm btn-outline-success" title="New purchase"><i class="bi bi-box-arrow-in-down"></i></router-link>
+                <router-link :to="`/purchases/create?supplier=${item.id}`" class="btn btn-sm btn-outline-primary" title="New purchase"><i class="bi bi-box-arrow-in-down"></i></router-link>
                 <button v-if="item.balance > 0" class="btn btn-sm btn-outline-warning ms-1" title="Pay" @click="pay = item"><i class="bi bi-cash"></i></button>
                 <router-link :to="`/suppliers/${item.id}`" class="btn btn-sm btn-outline-secondary ms-1" title="Ledger"><i class="bi bi-journal-text"></i></router-link>
             </template>

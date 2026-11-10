@@ -14,7 +14,7 @@
 
                 <div class="d-flex align-items-center gap-3">
                     <span v-if="total !== null" class="result-count d-none d-sm-inline">{{ total }} {{ total === 1 ? 'record' : 'records' }}</span>
-                    <button class="btn btn-success d-inline-flex align-items-center" @click="openForm()">
+                    <button class="btn btn-primary d-inline-flex align-items-center" @click="openForm()">
                         <i class="bi bi-plus-lg me-2"></i>{{ addLabel }}
                     </button>
                 </div>
@@ -78,7 +78,7 @@
 
             <template #footer>
                 <button type="button" class="btn btn-outline-secondary" @click="show = false">Cancel</button>
-                <button type="submit" class="btn btn-success d-inline-flex align-items-center" :form="formId" :disabled="saving">
+                <button type="submit" class="btn btn-primary d-inline-flex align-items-center" :form="formId" :disabled="saving">
                     <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
                     {{ saving ? 'Saving…' : editing ? 'Save changes' : 'Save' }}
                 </button>

@@ -60,7 +60,7 @@
                 <div class="d-flex justify-content-between"><span class="text-capitalize">Refunded ({{ ret.refund_method }})</span><span>{{ money(ret.refund_amount) }}</span></div>
                 <div v-if="ret.reason" class="small text-muted mt-2">Reason: {{ ret.reason }}</div>
             </template>
-            <template #footer><a :href="`/print/return/${ret?.id}?print=1`" target="_blank" class="btn btn-success"><i class="bi bi-printer"></i> Print credit note</a></template>
+            <template #footer><a :href="`/print/return/${ret?.id}?print=1`" target="_blank" class="btn btn-primary"><i class="bi bi-printer"></i> Print credit note</a></template>
         </Modal>
     </div>
 </template>

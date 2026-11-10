@@ -61,12 +61,12 @@
                     <div class="d-flex justify-content-between fs-5 fw-bold text-success border-top pt-2 mb-2"><span>Total</span><span>{{ money(total) }}</span></div>
                     <div class="mb-2"><label class="form-label small mb-0">Paid now</label>
                         <div class="input-group input-group-sm"><input v-model.number="form.paid" type="number" step="0.01" min="0" class="form-control">
-                            <button type="button" class="btn btn-outline-success" @click="form.paid = total">Full</button></div></div>
+                            <button type="button" class="btn btn-outline-primary" @click="form.paid = total">Full</button></div></div>
                     <div class="mb-2"><label class="form-label small mb-0">Payment method</label>
                         <select v-model="form.payment_method" class="form-select form-select-sm"><option value="cash">Cash</option><option value="bank">Bank</option><option value="cheque">Cheque</option><option value="online">Online</option></select></div>
                     <div class="d-flex justify-content-between mb-3"><span>Due (added to supplier)</span><b class="text-danger">{{ money(Math.max(total - (form.paid || 0), 0)) }}</b></div>
                     <input v-model="form.note" class="form-control form-control-sm mb-3" placeholder="Note (optional)">
-                    <button class="btn btn-success w-100 btn-lg" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span><i v-else class="bi bi-check2-circle"></i> Save Purchase</button>
+                    <button class="btn btn-primary w-100 btn-lg" :disabled="saving"><span v-if="saving" class="spinner-border spinner-border-sm me-1"></span><i v-else class="bi bi-check2-circle"></i> Save Purchase</button>
                     
                 </div>
             </div>

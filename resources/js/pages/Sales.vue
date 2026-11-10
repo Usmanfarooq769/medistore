@@ -61,7 +61,7 @@
             <template #footer>
                 <button v-if="auth.isAdmin" class="btn btn-outline-danger me-auto" @click="voidSale"><i class="bi bi-x-octagon"></i> Void</button>
                 <router-link :to="`/returns/new?invoice=${sale?.invoice_no}`" class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Return</router-link>
-                <a :href="`/print/sale/${sale?.id}?print=1`" target="_blank" class="btn btn-success"><i class="bi bi-printer"></i> Print</a>
+                <a :href="`/print/sale/${sale?.id}?print=1`" target="_blank" class="btn btn-primary"><i class="bi bi-printer"></i> Print</a>
             </template>
         </Modal>
     </div>

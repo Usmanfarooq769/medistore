@@ -13,7 +13,7 @@
                     <tr><th class="text-muted fw-normal">Total stock</th><td class="fw-bold" :class="m.is_low ? 'text-danger' : 'text-success'">{{ m.total_stock }} individual units <small class="text-muted fw-normal">(re-order at {{ m.reorder_level }} units)</small></td></tr>
                 </table>
                 <div class="d-flex gap-2 mt-3">
-                    <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-success btn-sm"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link>
+                    <router-link :to="`/purchases/create?medicine=${m.id}`" class="btn btn-primary btn-sm"><i class="bi bi-box-arrow-in-down"></i> Purchase</router-link>
                     <router-link :to="`/adjustments?medicine=${m.id}`" class="btn btn-outline-secondary btn-sm"><i class="bi bi-sliders"></i> Adjust</router-link>
                 </div>
             </div></div></div>

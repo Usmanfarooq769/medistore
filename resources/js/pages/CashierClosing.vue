@@ -11,7 +11,7 @@
                             <input v-model.number="openingCash" type="number" min="0" step="0.01" class="form-control" required>
                         </div>
                         <div class="col-12">
-                            <button class="btn btn-success" :disabled="busy">Open shift</button>
+                            <button class="btn btn-primary" :disabled="busy">Open shift</button>
                         </div>
                     </form>
                 </div>
@@ -24,7 +24,7 @@
                     </div>
                     <div class="rounded bg-body-tertiary p-3 d-flex justify-content-between align-items-center"><span class="fw-semibold">Expected drawer cash</span><span class="fs-3 fw-bold text-success">{{ money(session.expected_cash) }}</span></div>
                     <div class="row g-2 mt-3">
-                        <div class="col-md-6"><form class="border rounded p-3 h-100" @submit.prevent="cashMovement('in')"><h6>Cash received / float added</h6><input v-model.number="cashIn.amount" type="number" min="0.01" step="0.01" class="form-control mb-2" placeholder="Amount" required><input v-model="cashIn.category" class="form-control mb-2" placeholder="Reason / category" required><input v-model="cashIn.note" class="form-control mb-2" placeholder="Note (optional)"><button class="btn btn-outline-success btn-sm">Record cash in</button></form></div>
+                        <div class="col-md-6"><form class="border rounded p-3 h-100" @submit.prevent="cashMovement('in')"><h6>Cash received / float added</h6><input v-model.number="cashIn.amount" type="number" min="0.01" step="0.01" class="form-control mb-2" placeholder="Amount" required><input v-model="cashIn.category" class="form-control mb-2" placeholder="Reason / category" required><input v-model="cashIn.note" class="form-control mb-2" placeholder="Note (optional)"><button class="btn btn-outline-primary btn-sm">Record cash in</button></form></div>
                         <div class="col-md-6"><form class="border rounded p-3 h-100" @submit.prevent="cashMovement('out')"><h6>Cash expense / paid out</h6><input v-model.number="cashOut.amount" type="number" min="0.01" step="0.01" class="form-control mb-2" placeholder="Amount" required><input v-model="cashOut.category" class="form-control mb-2" placeholder="Reason / category" required><input v-model="cashOut.note" class="form-control mb-2" placeholder="Note (optional)"><button class="btn btn-outline-danger btn-sm">Record cash out</button></form></div>
                     </div>
                     <hr><form class="row g-2" @submit.prevent="closeShift"><div class="col-md-5"><label class="form-label">Counted cash in drawer</label><input v-model.number="countedCash" type="number" min="0" step="0.01" class="form-control" required></div><div class="col-md-5"><label class="form-label">Closing note</label><input v-model="closingNote" class="form-control" placeholder="Optional note"></div><div class="col-md-2 d-flex align-items-end"><button class="btn btn-danger w-100" :disabled="busy">Close shift</button></div></form>
