@@ -22,7 +22,19 @@ const routes = [
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
     { path: '/mobile', component: () => import('../pages/MobileHome.vue'), meta: { title: 'Mobile Dashboard' } },
     { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
-    { path: '/purchase-orders', component: () => import('../pages/PurchaseOrders.vue'), meta: { manager: true, title: 'Purchase Orders' } },
+    { path: '/purchase-orders',
+        name: 'purchase-orders',
+        component: () => import('../pages/PurchaseOrders.vue'),
+         meta: { manager: true, title: 'Purchase Orders' } },
+    {
+    path: '/list-purchase-orders/create',
+    name: 'purchase-orders.create',
+    component: () => import('../pages/ListPurchaseOrderCreate.vue'),
+    meta: {
+        manager: true,
+        title: 'Purchase Orders Create'
+    }
+},
     { path: '/prescriptions', component: () => import('../pages/Prescriptions.vue'), meta: { title: 'Prescriptions' } },
     { path: '/branches', component: () => import('../pages/Branches.vue'), meta: { ...admin, title: 'Branches & Transfers' } },
     { path: '/finance', component: () => import('../pages/Finance.vue'), meta: { ...admin, title: 'Finance & Accounting' } },
