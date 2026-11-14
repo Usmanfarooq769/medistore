@@ -28,3 +28,13 @@ export function errorAlert(data = {}, status = 0) {
     if (status === 404) return Swal.fire({ icon: 'info', title: 'Not found', text: data.message || 'Record not found.' });
     return Swal.fire({ icon: 'error', title: 'Oops...', text: data.message || 'Something went wrong. Please try again.' });
 }
+
+/** Ask a manager for their PIN. Resolves to the PIN string or null if cancelled. */
+export async function askManagerPin(message = 'This action needs a manager PIN.') {
+    const r = await Swal.fire({
+        icon: 'info', title: 'Manager approval', text: message, input: 'password', inputPlaceholder: 'Manager PIN',
+        inputAttributes: { inputmode: 'numeric', maxlength: 8, autocomplete: 'off' }, showCancelButton: true, confirmButtonText: 'Approve',
+        inputValidator: (v) => (!v ? 'Enter the PIN' : undefined),
+    });
+    return r.isConfirmed ? String(r.value).trim() : null;
+}

@@ -7,6 +7,7 @@
             </template>
             <template #cell-name="{ item }">
                 <router-link :to="`/customers/${item.id}`" class="fw-semibold text-decoration-none">{{ item.name }}</router-link>
+                <span v-if="item.allergies" class="badge bg-danger-transparent ms-1" :title="'Allergies: ' + item.allergies"><i class="bi bi-exclamation-triangle-fill"></i> Allergy</span>
                 <div class="small text-muted">{{ item.address }}</div>
             </template>
             <template #cell-sales_count="{ item }"><span class="badge bg-secondary">{{ item.sales_count }}</span></template>
@@ -38,6 +39,13 @@ const fields = reactive([
     { key: 'name', label: 'Name', required: true },
     { key: 'phone', label: 'Phone', col: 'col-md-6' },
     { key: 'address', label: 'Address', col: 'col-md-6' },
+    { key: 'cnic', label: 'CNIC', placeholder: '35202-1234567-1', col: 'col-md-6' },
+    { key: 'email', label: 'Email', type: 'email', col: 'col-md-6' },
+    { key: 'date_of_birth', label: 'Date of birth', type: 'date', col: 'col-md-6' },
+    { key: 'gender', label: 'Gender', type: 'select', col: 'col-md-6', options: [{ value: '', label: 'Not stated' }, { value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }] },
+    { key: '_med', type: 'section', label: 'Medical profile', icon: 'bi-heart-pulse', hint: 'Used by the POS safety check – the cashier is warned if a medicine matches a listed allergy.' },
+    { key: 'allergies', label: 'Known allergies', type: 'textarea', placeholder: 'e.g. Penicillin, Sulfa, Aspirin' },
+    { key: 'chronic_conditions', label: 'Chronic conditions', type: 'textarea', placeholder: 'e.g. Diabetes, Hypertension, Asthma' },
     ...(auth.isAdmin ? [{ key: 'credit_limit', label: 'Credit limit (blank = unlimited)', type: 'number', step: '0.01', min: 0, col: 'col-md-6', hint: 'Blank means unlimited credit.' }] : []),
 ]);
 if (['admin', 'branch_manager'].includes(auth.user?.role)) {

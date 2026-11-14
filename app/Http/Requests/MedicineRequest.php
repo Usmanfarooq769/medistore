@@ -12,6 +12,12 @@ class MedicineRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        // controlled / narcotic / psychotropic classes always get register tracking
+        if (in_array($this->input('drug_class'), ['controlled', 'narcotic', 'psychotropic'], true)) $this->merge(['requires_controlled_tracking' => true]);
+    }
+
     public function rules(): array
     {
         $id = $this->route('medicine')?->id;
@@ -31,6 +37,11 @@ class MedicineRequest extends FormRequest
             'rack'            => 'nullable|string|max:50',
             'is_active'       => 'boolean',
             'requires_prescription' => 'boolean',
+            'requires_controlled_tracking' => 'boolean',
+            'dosage_form'     => 'nullable|string|max:40',
+            'storage_condition' => 'nullable|in:room,cool,cold_chain,protect_light',
+            'drug_class'      => 'nullable|in:otc,prescription,controlled,narcotic,psychotropic,supplement,device',
+            'hs_code'         => 'nullable|string|max:20',
         ];
     }
 

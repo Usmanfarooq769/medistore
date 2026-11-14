@@ -157,6 +157,7 @@ class StageFourController extends Controller
     public function expiryClaims(Request $r) {
         return ExpiryReturnClaim::with(['supplier:id,name','items.medicine:id,name','creditNote'])
             ->when(!auth()->user()->isAdmin(),fn($q)=>$q->where('branch_id',BranchContext::id()))
+            ->when($r->search, fn($q,$s)=>$q->where('claim_no','like',"%{$s}%"))
             ->latest()->paginate(30);
     }
     public function createExpiryClaim(Request $r) {

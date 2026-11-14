@@ -56,9 +56,16 @@ class SaleController extends Controller
     }
 
     /** Void full sale (admin) – remaining stock back, due reversed */
-    public function destroy(Sale $sale)
+    public function destroy(Request $request, Sale $sale)
     {
         abort_unless((int)$sale->branch_id === BranchContext::id(), 404);
+        $approver = $request->user();
+        if (! $approver->hasPermission('sales.void')) {
+            $approver = app(\App\Services\ManagerPinService::class)->approver($request->input('manager_pin'), 'sales.void', $request->user());
+            if (! $approver) return response()->json(['message' => 'Voiding an invoice needs a manager PIN.', 'requires_manager_pin' => true], 403);
+        }
+        \App\Models\AuditLog::create(['user_id' => $request->user()->id, 'action' => 'sale_voided', 'subject_type' => Sale::class, 'subject_id' => $sale->id,
+            'new_values' => ['invoice_no' => $sale->invoice_no, 'approved_by' => $approver->id, 'reason' => $request->input('reason')], 'ip_address' => $request->ip()]);
         abort_if((float)$sale->paid > 0 || (float)$sale->returned_amount > 0, 422, 'This invoice has received payments or returns. Process a return/refund instead of voiding it.');
         DB::transaction(function () use ($sale) {
             app(JournalPostingService::class)->reverseSource(Sale::class, $sale->id, (int) $sale->branch_id, 'Sale voided ' . $sale->invoice_no);

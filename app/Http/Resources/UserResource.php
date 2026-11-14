@@ -17,6 +17,9 @@ class UserResource extends JsonResource
             'is_admin'   => $this->role === 'admin',
             'is_active'  => (bool) $this->is_active,
             'branch_id'  => $this->branch_id,
+            'has_pin'    => ! empty($this->manager_pin),
+            'permissions' => $this->effectivePermissions(),
+            'permission_overrides' => (object) ($this->permissions ?? []),
             'created_at' => $this->created_at?->toDateTimeString(),
         ];
     }

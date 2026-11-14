@@ -36,7 +36,7 @@ class AuthController extends Controller
             'message'  => 'Welcome back, ' . $user->name . '!',
             'token'    => $user->createToken('spa')->plainTextToken,
             'user'     => new UserResource($user),
-            'settings' => Setting::allCached(),
+            'settings' => collect(Setting::allCached())->except(['fbr_api_token'])->all(),
         ]);
     }
 
@@ -44,7 +44,7 @@ class AuthController extends Controller
     {
         return response()->json([
             'user'     => new UserResource($request->user()),
-            'settings' => Setting::allCached(),
+            'settings' => collect(Setting::allCached())->except(['fbr_api_token'])->all(),
         ]);
     }
 

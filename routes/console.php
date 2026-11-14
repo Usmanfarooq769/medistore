@@ -18,6 +18,7 @@ $scheduled = [
     ['partners:deliver-webhooks', fn ($event) => $event->everyMinute()],
     ['system:health-check', fn ($event) => $event->hourly()],
     ['store:expire-order-reservations', fn ($event) => $event->everyMinute()],
+    ['store:fbr-sync', fn ($event) => $event->everyFiveMinutes()],
 ];
 
 foreach ($scheduled as [$command, $frequency]) {

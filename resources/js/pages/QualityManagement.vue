@@ -21,7 +21,7 @@
             <div class="col-md-3"><label class="form-label small">Incident type</label><select v-model="incidentForm.incident_type" class="form-select" required><option value="medication_error">Medication error</option><option value="adverse_reaction">Adverse reaction</option><option value="near_miss">Near miss</option><option value="product_quality">Product quality</option><option value="cold_chain">Cold-chain excursion</option><option value="other">Other</option></select></div>
             <div class="col-md-2"><label class="form-label small">Severity</label><select v-model="incidentForm.severity" class="form-select"><option value="low">Low</option><option value="moderate">Moderate</option><option value="high">High</option><option value="critical">Critical</option></select></div>
             <div class="col-md-3"><label class="form-label small">Occurred at</label><input v-model="incidentForm.occurred_at" type="datetime-local" class="form-control" required></div>
-            <div class="col-md-4"><label class="form-label small">Medicine ID (optional)</label><input v-model.number="incidentForm.medicine_id" type="number" min="1" class="form-control" placeholder="Medicine ID"></div>
+            <div class="col-md-4"><label class="form-label small">Medicine ID (optional)</label><EntityPicker v-model="incidentForm.medicine_id" type="medicine" placeholder="Medicine (optional)" /></div>
             <div class="col-12"><label class="form-label small">What happened?</label><textarea v-model="incidentForm.description" class="form-control" rows="2" required maxlength="10000"></textarea></div>
             <div class="col-12"><label class="form-label small">Immediate action taken</label><textarea v-model="incidentForm.immediate_action" class="form-control" rows="2"></textarea></div>
             <div class="col-12 text-end"><button class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Submit incident report' }}</button></div>
@@ -52,6 +52,7 @@
 </template>
 
 <script setup>
+import EntityPicker from '../components/EntityPicker.vue';
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api';

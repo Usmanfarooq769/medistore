@@ -20,10 +20,12 @@
                     <template v-if="loading && !products.length"><div v-for="i in 12" :key="i" class="skeleton" style="height:105px"></div></template>
                     <div v-else-if="!products.length" class="text-center text-muted p-5" style="grid-column:1/-1">
                         <i class="bi bi-search fs-1 d-block"></i>No sellable medicine found<br><small>Out-of-stock and expired batches are hidden</small>
+                        <div v-if="q.trim().length >= 2" class="mt-3"><button class="btn btn-sm btn-outline-primary" @click="findSubsForQuery"><i class="bi bi-arrow-left-right me-1"></i>Find substitutes for “{{ q }}”</button></div>
                     </div>
                     <div v-for="(m, i) in products" :key="m.id" class="pos-card" :class="{ active: i === active, low: m.sellable_stock <= m.reorder_level }"
                          :title="m.generic_name" @click="active = i; add(m)">
-                        <span v-if="inCart[m.id]" class="badge rounded-pill bg-success in-cart">{{ inCart[m.id] }}</span>
+                        <span v-if="inCart[m.id]" class="badge rounded-pill bg-primary in-cart">{{ inCart[m.id] }}</span>
+                        <button v-if="m.generic_name" type="button" class="subs-btn" title="Same-generic substitutes" @click.stop="openSubs(m)"><i class="bi bi-arrow-left-right"></i></button>
                         <div class="name">{{ m.display_name }}</div>
                         <div class="small text-muted text-truncate">{{ m.generic_name || '\u00a0' }}</div>
                         <div class="d-flex justify-content-between align-items-end mt-2">
@@ -71,6 +73,7 @@
                         <span><i class="bi bi-person-check text-success"></i> <b>{{ customer.name }}</b> {{ customer.phone }}
                             <span v-if="customer.balance > 0" class="badge bg-danger">Due {{ money(customer.balance) }}</span>
                             <span class="badge bg-info-subtle text-info ms-1">{{ customer.loyalty_points || 0 }} pts</span>
+                            <span v-if="customer.allergies" class="badge bg-danger-transparent ms-1" :title="customer.allergies"><i class="bi bi-exclamation-triangle-fill"></i> Allergy: {{ customer.allergies.length > 28 ? customer.allergies.slice(0, 28) + '…' : customer.allergies }}</span>
                             <span v-if="customer.credit_limit !== null && customer.credit_limit !== undefined" class="badge bg-secondary-subtle text-secondary">Credit {{ money(customer.available_credit) }} left</span></span>
                         <button class="btn btn-sm text-muted p-0" @click="customer = null; redeemPoints = 0"><i class="bi bi-x-lg"></i></button>
                     </div>
@@ -110,12 +113,13 @@
                             <button class="btn btn-secondary" type="button" @click="discPct = !discPct">{{ discPct ? '%' : getCurrency() }}</button>
                         </div>
                     </div>
+                    <div v-if="needsPin" class="small text-warning-emphasis text-end"><i class="bi bi-lock-fill"></i> Above {{ auth.settings.max_discount_percent }}% – manager PIN will be asked</div>
                     <div class="d-flex justify-content-between align-items-center gap-2 mt-1">
                         <span class="small">Tax</span>
                         <select v-if="taxProfiles.length" v-model.number="taxProfileId" :disabled="!!onlineOrderId" class="form-select form-select-sm" style="max-width:170px" @change="applyTaxProfile"><option :value="null">Manual ({{taxPercent}}%)</option><option v-for="t in taxProfiles" :key="t.id" :value="t.id">{{t.name}} ({{t.rate}}%)</option></select>
                         <input v-else v-model.number="taxPercent" type="number" min="0" max="100" step="0.01" :disabled="!!onlineOrderId" class="form-control form-control-sm text-end" style="max-width:170px">
                     </div>
-                    <div class="d-flex justify-content-between fs-3 fw-bold text-success border-top mt-2 pt-1"><span>Total</span><span>{{ money(totals.total) }}</span></div>
+                    <div class="d-flex justify-content-between fs-3 fw-bold text-primary border-top mt-2 pt-1"><span>Total</span><span>{{ money(totals.total) }}</span></div>
                     <div class="btn-group w-100 my-2">
                         <button v-for="m in methods" :key="m.key" class="btn btn-sm" :class="method === m.key ? 'btn-primary' : 'btn-outline-secondary'" @click="setMethod(m.key)">
                             <i :class="['bi', m.icon]"></i> {{ m.label }}</button>
@@ -138,6 +142,37 @@
                 </div>
             </div>
         </div>
+
+        <!-- ============ SUBSTITUTES ============ -->
+        <div v-if="subs.open" class="modal d-block" tabindex="-1" style="background:rgba(20,22,40,.5)" @click.self="subs.open = false">
+            <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div><h6 class="modal-title fw-semibold mb-0"><i class="bi bi-arrow-left-right text-primary me-1"></i>Substitutes for {{ subs.base?.display_name || subs.base?.name }}</h6>
+                            <div class="small text-muted">Same generic: {{ subs.generic || '—' }} · sorted by availability, strength and price</div></div>
+                        <button type="button" class="btn-close" @click="subs.open = false"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <div v-if="subs.loading" class="p-4 text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Looking up…</div>
+                        <div v-else-if="!subs.rows.length" class="p-4 text-center text-muted"><i class="bi bi-inbox fs-2 d-block"></i>No other brand with the same generic name is in your catalogue.</div>
+                        <table v-else class="table align-middle mb-0">
+                            <thead><tr><th>Brand</th><th>Strength</th><th class="text-end">Price</th><th class="text-end">Difference</th><th>Stock</th><th></th></tr></thead>
+                            <tbody>
+                                <tr v-for="r in subs.rows" :key="r.id">
+                                    <td class="fw-semibold">{{ r.name }}<div class="small text-muted fw-normal">{{ r.manufacturer || r.unit }}</div></td>
+                                    <td><span class="badge" :class="r.same_strength ? 'bg-success-transparent' : 'bg-warning-transparent'">{{ r.strength || '—' }}{{ r.same_strength ? ' · same' : ' · differs' }}</span></td>
+                                    <td class="text-end">{{ money(r.sale_price) }}</td>
+                                    <td class="text-end" :class="r.price_diff < 0 ? 'text-success' : r.price_diff > 0 ? 'text-danger' : 'text-muted'">{{ r.price_diff === 0 ? 'same' : (r.price_diff > 0 ? '+' : '') + money(r.price_diff) }}</td>
+                                    <td><span class="badge" :class="r.in_stock ? 'bg-success-transparent' : 'bg-danger-transparent'">{{ r.in_stock ? r.sellable_stock + ' units' : 'Out of stock' }}</span></td>
+                                    <td class="text-end"><button class="btn btn-sm btn-primary" :disabled="!r.in_stock" @click="addSubstitute(r)">Add</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="modal-footer small text-muted justify-content-start">A different strength or dosage form needs the pharmacist's / doctor's approval before substitution.</div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -149,11 +184,11 @@ import Autocomplete from '../components/Autocomplete.vue';
 import BarcodeScanner from '../components/BarcodeScanner.vue';
 import { useAuth } from '../stores/auth';
 import { date, debounce, getCurrency, money, stockChanged } from '../utils/format';
-import { confirm, esc, Swal, toast } from '../utils/swal';
+import { askManagerPin, confirm, errorAlert, esc, Swal, toast } from '../utils/swal';
 
 const auth = useAuth();
 const route = useRoute();
-const priceEdit = computed(() => auth.isAdmin || auth.can('cashier_price_edit'));
+const priceEdit = computed(() => auth.isAdmin || auth.perm('sales.price_edit') || auth.can('cashier_price_edit'));
 const methods = [
     { key: 'cash', label: 'Cash', icon: 'bi-cash' }, { key: 'card', label: 'Card', icon: 'bi-credit-card' },
     { key: 'online', label: 'Online', icon: 'bi-phone' }, { key: 'credit', label: 'Credit', icon: 'bi-journal' },
@@ -161,7 +196,7 @@ const methods = [
 
 const categories = ref([]);
 const products = ref([]);
-const q = ref('');
+const q = ref(route.query.q ? String(route.query.q) : '');
 const category = ref('');
 const page = ref(1);
 const hasMore = ref(false);
@@ -340,6 +375,66 @@ async function clearCart() {
     if (await confirm({ title: 'Clear cart?', confirmText: 'Yes, clear' })) resetSale();
 }
 
+/* ---------- substitutes ---------- */
+const subs = ref({ open: false, loading: false, base: null, rows: [], generic: '' });
+async function openSubs(m) {
+    subs.value = { open: true, loading: true, base: m, rows: [], generic: m.generic_name };
+    try { const { data } = await api.get(`/medicines/${m.id}/substitutes`, { silent: true }); subs.value.rows = data.data; subs.value.generic = data.generic || m.generic_name; }
+    catch (e) { subs.value.rows = []; }
+    subs.value.loading = false;
+}
+async function findSubsForQuery() {
+    try { const { data } = await api.get('/medicines/search', { params: { q: q.value.trim() }, silent: true }); const m = (data.data || [])[0];
+        if (!m) return toast.fire({ icon: 'info', title: 'No medicine with that name' }); openSubs(m); } catch (e) { /* ignore */ }
+}
+function addSubstitute(r) { add(r); subs.value.open = false; }
+
+/* ---------- drug-safety review (allergy / interaction / duplicate) ---------- */
+const needsPin = computed(() => !auth.perm('sales.override_discount') && totals.value.sub > 0 && (totals.value.manualDisc / totals.value.sub * 100) > Number(auth.settings.max_discount_percent || 100) + 0.001);
+const sevBadge = { contraindicated: 'danger', major: 'danger', moderate: 'warning', minor: 'secondary' };
+async function reviewSafety() {
+    if (auth.settings.safety_check_enabled === '0' || onlineOrderId.value) return { ok: true };
+    let s;
+    try { s = (await api.post('/pos/safety-check', { medicine_ids: cart.value.map((c) => c.id), customer_id: customer.value?.id || null }, { silent: true })).data; }
+    catch (e) { return { ok: true }; }
+    if (s.level === 'none') return { ok: true };
+    const danger = s.level === 'danger';
+    const rows = [
+        ...s.allergies.map((a) => `<li class="mb-2"><span class="badge bg-danger">ALLERGY</span> ${esc(a.message)}</li>`),
+        ...s.interactions.map((i) => `<li class="mb-2"><span class="badge bg-${sevBadge[i.severity]}">${esc(i.severity.toUpperCase())}</span> <b>${esc(i.between.join(' + '))}</b><br><span class="small">${esc(i.effect)}${i.management ? ' <i>' + esc(i.management) + '</i>' : ''}</span></li>`),
+        ...s.duplicates.map((d) => `<li class="mb-2"><span class="badge bg-warning text-dark">DUPLICATE</span> ${esc(d.message)}</li>`),
+    ].join('');
+    const r = await Swal.fire({
+        icon: danger ? 'error' : 'warning', title: danger ? 'Drug-safety alert' : 'Please review',
+        html: `<ul class="text-start list-unstyled mb-2">${rows}</ul><div class="small text-muted text-start">Decision support only – the pharmacist is responsible for the final check.</div>`,
+        width: 640, showCancelButton: true, cancelButtonText: 'Go back', confirmButtonText: danger ? 'Override & continue' : 'Continue',
+        confirmButtonColor: danger ? '#dc3545' : '#8b7eff', reverseButtons: true,
+        input: danger ? 'text' : undefined, inputPlaceholder: 'Reason for override (required)', inputValidator: danger ? (v) => (!v?.trim() ? 'Write the reason' : undefined) : undefined,
+    });
+    if (!r.isConfirmed) return { ok: false };
+    if (!danger) return { ok: true };
+    let pin = null;
+    if (!auth.perm('safety.override')) { pin = await askManagerPin('A pharmacist / manager PIN is needed to override this alert.'); if (!pin) return { ok: false }; }
+    return { ok: true, override: true, note: r.value.trim(), pin };
+}
+
+/** POST checkout; handles "manager PIN needed" + safety replies from the server. Returns response data or null. */
+async function postCheckout(body, safety) {
+    let pin = safety.pin || null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            return (await api.post('/pos/checkout', { ...body, manager_pin: pin, safety_override: safety.override || undefined, safety_override_note: safety.note }, { silent: true })).data;
+        } catch (e) {
+            const d = e.response?.data || {};
+            if (e.response?.status === 422 && d.requires_manager_pin && attempt < 2) {
+                pin = await askManagerPin(d.message); if (!pin) return null; continue;
+            }
+            errorAlert(d, e.response?.status); return null;
+        }
+    }
+    return null;
+}
+
 /* ---------- checkout ---------- */
 async function checkout() {
     if (busy.value || !cart.value.length) return;
@@ -361,11 +456,14 @@ async function checkout() {
     const isOnlineOrderSale = !!onlineOrderId.value;
     busy.value = true;
     try {
-        const { data } = await api.post('/pos/checkout', {
+        const safety = await reviewSafety();
+        if (!safety.ok) return;
+        const data = await postCheckout({
             items: cart.value.map((c) => ({ id: c.id, quantity: c.qty, sale_unit: c.sale_unit, price: priceEdit.value ? c.price : null })), online_order_id: onlineOrderId.value,
             customer_id: customer.value?.id || null, prescription_id: prescriptionId,
             discount: t.manualDisc, promotion_code: promotionCode.value || null, redeem_points: Number(redeemPoints.value) || 0, tax_percent: t.tp, tax_profile_id: taxProfileId.value, paid: t.paid, payment_method: method.value,
-        });
+        }, safety);
+        if (!data) return;
         resetSale();
         onlineOrderId.value = null;
         onlineOrderNo.value = '';
@@ -375,11 +473,11 @@ async function checkout() {
         const low = data.low_stock?.length ? `<div class="alert alert-warning small py-2 mt-2 mb-0 text-start"><i class="bi bi-exclamation-triangle"></i> Low stock: ${data.low_stock.map((m) => `${esc(m.name)} (${m.total_stock})`).join(', ')}</div>` : '';
         const r = await Swal.fire({
             icon: 'success', title: isOnlineOrderSale ? 'Online order sale completed' : 'Sale completed',
-            html: `<div class="text-muted small">${esc(s.invoice_no)}</div><div class="display-6 fw-bold text-success">${money(s.change_amount)}</div>
+            html: `<div class="text-muted small">${esc(s.invoice_no)}${s.fbr_invoice_no ? ` · FBR ${esc(s.fbr_invoice_no)}` : ''}${s.fbr_status === 'pending' ? ' <span class="badge bg-warning text-dark">FBR pending</span>' : ''}</div><div class="display-6 fw-bold text-success">${money(s.change_amount)}</div>
                    <div class="small text-muted">change to return</div>${s.due > 0 ? `<div class="text-danger fw-semibold mt-1">Due added: ${money(s.due)}</div>` : ''}${low}`,
-            showDenyButton: true, confirmButtonText: '<i class="bi bi-printer"></i> Print receipt', denyButtonText: 'New sale', confirmButtonColor: '#198754', denyButtonColor: '#6c757d',
+            showDenyButton: true, confirmButtonText: '<i class="bi bi-printer"></i> Print receipt', denyButtonText: 'New sale', confirmButtonColor: '#8b7eff', denyButtonColor: '#6c757d',
         });
-        if (r.isConfirmed) window.open(`/print/sale/${s.id}?print=1`, '_blank', 'width=420,height=720');
+        if (r.isConfirmed) window.open(`/print/sale/${s.id}?print=1`, '_blank', auth.settings.receipt_width === 'a4' ? 'width=900,height=800' : 'width=420,height=720');
     } catch (e) {
         loadProducts();
     } finally {

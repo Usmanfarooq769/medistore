@@ -10,6 +10,7 @@ class Medicine extends Model
     protected $fillable = [
         'name', 'generic_name', 'strength', 'category_id', 'manufacturer_id', 'barcode', 'unit',
         'pack_size', 'stock_units_are_base', 'requires_prescription', 'requires_controlled_tracking', 'purchase_price', 'sale_price', 'reorder_level', 'rack', 'is_active',
+        'dosage_form', 'storage_condition', 'drug_class', 'hs_code',
     ];
 
     protected $casts = [

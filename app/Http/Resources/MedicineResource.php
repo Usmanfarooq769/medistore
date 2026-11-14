@@ -35,6 +35,11 @@ class MedicineResource extends JsonResource
             'is_low'          => $sellable <= (int) $this->reorder_level,
             'is_active'       => (bool) $this->is_active,
             'requires_prescription' => (bool) ($this->requires_prescription ?? false),
+            'requires_controlled_tracking' => (bool) ($this->requires_controlled_tracking ?? false),
+            'dosage_form'     => $this->dosage_form,
+            'storage_condition' => $this->storage_condition,
+            'drug_class'      => $this->drug_class,
+            'hs_code'         => $this->hs_code,
             // optional aggregates
             'sellable_stock'  => array_key_exists('sellable_stock', $attributes) ? (int) ($this->sellable_stock ?? 0) : null,
             'nearest_expiry'  => $this->when(isset($this->nearest_expiry), fn () => $this->nearest_expiry),

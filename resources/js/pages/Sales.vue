@@ -23,7 +23,9 @@
                 <template #head><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Items</th><th>Total</th><th>Paid</th><th>Status</th><th>Method</th><th>Cashier</th><th></th></tr></template>
                 <template #row="{ item: s }">
                     <tr>
-                        <td><a href="#" class="fw-semibold text-decoration-none" @click.prevent="view(s.id)">{{ s.invoice_no }}</a></td>
+                        <td><a href="#" class="fw-semibold text-decoration-none" @click.prevent="view(s.id)">{{ s.invoice_no }}</a>
+                            <div v-if="s.fbr_invoice_no" class="small text-muted">FBR {{ s.fbr_invoice_no }}</div>
+                            <span v-if="s.fbr_status === 'pending'" class="badge bg-warning-transparent" :title="s.fbr_error">FBR pending</span></td>
                         <td class="small">{{ dateTime(s.created_at) }}</td>
                         <td>{{ s.customer_name || 'Walk-in' }}<div class="small text-muted">{{ s.customer_phone }}</div></td>
                         <td><span class="badge bg-secondary">{{ s.items_count }}</span></td>
@@ -43,7 +45,9 @@
 
         <Modal :show="!!sale" :title="sale?.invoice_no" @close="sale = null">
             <template v-if="sale">
-                <div class="small text-muted mb-2">{{ dateTime(sale.created_at) }} · {{ sale.customer_name || 'Walk-in' }} · by {{ sale.user }}</div>
+                <div class="small text-muted mb-2">{{ dateTime(sale.created_at) }} · {{ sale.customer_name || 'Walk-in' }} · by {{ sale.user }}
+                    <span v-if="sale.fbr_invoice_no" class="badge bg-success-transparent ms-1"><i class="bi bi-patch-check"></i> FBR {{ sale.fbr_invoice_no }}</span>
+                    <span v-else-if="sale.fbr_status === 'pending'" class="badge bg-warning-transparent ms-1" :title="sale.fbr_error">FBR pending</span></div>
                 <table class="table table-sm">
                     <thead><tr><th>Item</th><th>Batch</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead>
                     <tbody><tr v-for="i in sale.items" :key="i.id"><td>{{ i.medicine_name }}</td><td class="small">{{ i.batch_no }}</td>
@@ -59,7 +63,8 @@
                 <div v-if="sale.returns?.length" class="alert alert-warning small mt-2 mb-0">Returns: <span v-for="r in sale.returns" :key="r.id" class="me-2">{{ r.return_no }} ({{ money(r.total) }})</span></div>
             </template>
             <template #footer>
-                <button v-if="auth.isAdmin" class="btn btn-outline-danger me-auto" @click="voidSale"><i class="bi bi-x-octagon"></i> Void</button>
+                <button v-if="auth.perm('sales.void') || !sale?.paid" class="btn btn-outline-danger me-auto" @click="voidSale"><i class="bi bi-x-octagon"></i> Void</button>
+                <button v-if="sale?.fbr_status === 'pending' && ['admin', 'branch_manager'].includes(auth.user?.role)" class="btn btn-outline-warning" @click="retryFbr"><i class="bi bi-arrow-repeat"></i> Retry FBR</button>
                 <router-link :to="`/returns/new?invoice=${sale?.invoice_no}`" class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Return</router-link>
                 <a :href="`/print/sale/${sale?.id}?print=1`" target="_blank" class="btn btn-primary"><i class="bi bi-printer"></i> Print</a>
             </template>
@@ -74,14 +79,16 @@ import DataTable from '../components/DataTable.vue';
 import Modal from '../components/Modal.vue';
 import { useAuth } from '../stores/auth';
 import { dateTime, money, shiftDate, statusClass, stockChanged, today } from '../utils/format';
-import { confirm, notify } from '../utils/swal';
+import { askManagerPin, confirm, errorAlert, notify } from '../utils/swal';
+import { useRoute } from 'vue-router';
 
 const auth = useAuth();
 const table = ref(null);
 const totals = ref({});
 const sale = ref(null);
 const range = ref('');
-const filters = reactive({ search: '', from: '', to: '', method: '', status: '' });
+const route = useRoute();
+const filters = reactive({ search: route.query.search || '', from: '', to: '', method: '', status: '' });
 const ranges = [{ key: 'today', label: 'Today' }, { key: 'yesterday', label: 'Yesterday' }, { key: '7', label: 'Last 7 days' }, { key: 'month', label: 'This month' }, { key: '', label: 'All' }];
 
 function setRange(k) {
@@ -95,12 +102,20 @@ async function view(id) { sale.value = (await api.get(`/sales/${id}`)).data.data
 
 async function voidSale() {
     if (!(await confirm({ title: `Void ${sale.value.invoice_no}?`, text: 'Remaining stock will be restored and due reversed.', confirmText: 'Yes, void' }))) return;
-    try {
-        const { data } = await api.delete(`/sales/${sale.value.id}`);
-        notify(data.message);
-        sale.value = null;
-        table.value.reload();
-        stockChanged();
-    } catch (e) { /* shown */ }
+    let pin = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const { data } = await api.delete(`/sales/${sale.value.id}`, { data: { manager_pin: pin }, silent: true });
+            notify(data.message); sale.value = null; table.value.reload(); stockChanged(); return;
+        } catch (e) {
+            const d = e.response?.data || {};
+            if (d.requires_manager_pin && attempt < 2) { pin = await askManagerPin(d.message); if (!pin) return; continue; }
+            return errorAlert(d, e.response?.status);
+        }
+    }
+}
+
+async function retryFbr() {
+    try { const { data } = await api.post(`/sales/${sale.value.id}/fbr-sync`); notify(data.message); await view(sale.value.id); table.value.reload(); } catch (e) { /* shown */ }
 }
 </script>

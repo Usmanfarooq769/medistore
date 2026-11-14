@@ -10,12 +10,28 @@
                     <div class="header-element mx-lg-0 mx-2">
                         <a aria-label="Toggle sidebar" class="sidemenu-toggle header-link animated-arrow hor-toggle horizontal-navtoggle" href="javascript:void(0);" @click="toggleSidebar"><span></span></a>
                     </div>
-                    <div class="header-element d-none d-md-flex align-items-center">
-                        <span class="badge bg-light text-default border fw-medium fs-12 px-3 py-2"><i class="ri-calendar-line me-1"></i>{{ todayLabel }}</span>
+                    <div class="header-element d-none d-md-flex align-items-center position-relative" ref="searchWrap" style="min-width:min(380px,34vw)">
+                        <div class="input-group input-group-sm ms-2 w-100">
+                            <span class="input-group-text bg-transparent"><i class="ri-search-line"></i></span>
+                            <input ref="searchEl" v-model="searchQ" class="form-control" :placeholder="t('Search medicines, customers, invoices…')" autocomplete="off" @focus="searchOpen = true" @input="runSearch" @keydown.down.prevent="moveSearch(1)" @keydown.up.prevent="moveSearch(-1)" @keydown.enter.prevent="goSearch()">
+                            <span class="input-group-text bg-transparent d-none d-lg-flex"><kbd class="fs-10">Ctrl K</kbd></span>
+                        </div>
+                        <div v-if="searchOpen && searchQ.trim().length >= 2" class="dropdown-menu show main-header-dropdown p-1 w-100" style="top:calc(100% + 6px);max-height:60vh;overflow:auto">
+                            <div v-if="searching" class="px-3 py-2 text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Searching…</div>
+                            <a v-for="(r, i) in searchRes" :key="r.type + r.to" href="javascript:void(0)" class="dropdown-item d-flex align-items-center gap-2 rounded" :class="{ active: i === searchIdx }" @mouseenter="searchIdx = i" @click="goSearch(r)">
+                                <span class="avatar avatar-xs avatar-rounded bg-primary-transparent text-primary flex-shrink-0"><i :class="['bi', r.icon]"></i></span>
+                                <span class="min-w-0"><span class="d-block text-truncate fw-medium">{{ r.title }}</span><span class="d-block text-truncate fs-11 opacity-75">{{ r.type }} · {{ r.subtitle }}</span></span>
+                            </a>
+                            <div v-if="!searching && !searchRes.length" class="px-3 py-3 text-center text-muted small">No results for “{{ searchQ }}”</div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="header-content-right">
+                    <!-- language -->
+                    <div class="header-element">
+                        <a href="javascript:void(0);" class="header-link fw-semibold" title="English / اردو" @click="toggleLang"><span class="fs-13">{{ lang === 'en' ? 'اردو' : 'EN' }}</span></a>
+                    </div>
                     <!-- theme mode -->
                     <div class="header-element header-theme-mode">
                         <a href="javascript:void(0);" class="header-link" :title="dark ? 'Light mode' : 'Dark mode'" aria-label="Toggle theme" @click="toggleTheme">
@@ -65,7 +81,7 @@
 
                     <div class="header-element">
                         <router-link to="/pos" class="btn btn-primary btn-wave d-inline-flex align-items-center">
-                            <i class="ri-shopping-cart-2-line"></i><span class="d-none d-sm-inline ms-2">New sale</span>
+                            <i class="ri-shopping-cart-2-line"></i><span class="d-none d-sm-inline ms-2">{{ t('New sale') }}</span>
                         </router-link>
                     </div>
 
@@ -87,7 +103,7 @@
                             </div>
                             <hr class="dropdown-divider">
                             <router-link v-if="auth.isAdmin" to="/settings" class="dropdown-item" @click="userOpen = false"><i class="ri-settings-3-line me-2"></i>Settings</router-link>
-                            <button class="dropdown-item text-danger" @click="logout"><i class="ri-logout-box-r-line me-2"></i>Log out</button>
+                            <button class="dropdown-item text-danger" @click="logout"><i class="ri-logout-box-r-line me-2"></i>{{ t('Log out') }}</button>
                         </div>
                     </div>
                 </div>
@@ -110,18 +126,18 @@
                 <nav class="main-menu-container nav nav-pills flex-column sub-open">
                     <ul class="main-menu">
                         <template v-for="item in menu" :key="item.to || item.group || item.section">
-                            <li v-if="item.section" class="slide__category"><span class="category-name">{{ item.section }}</span></li>
+                            <li v-if="item.section" class="slide__category"><span class="category-name">{{ t(item.section) }}</span></li>
 
                             <li v-else-if="item.group" class="slide has-sub" :class="{ open: openGroup === item.group }">
                                 <a href="javascript:void(0);" class="side-menu__item" :class="{ active: openGroup === item.group }" @click="toggleGroup(item.group)">
                                     <i :class="['bi', item.icon, 'side-menu__icon']"></i>
-                                    <span class="side-menu__label">{{ item.group }}</span>
+                                    <span class="side-menu__label">{{ t(item.group) }}</span>
                                     <i class="ri-arrow-right-s-line side-menu__angle"></i>
                                 </a>
                                 <ul class="slide-menu child1" :style="{ display: openGroup === item.group ? 'block' : 'none' }">
-                                    <li class="slide side-menu__label1"><a href="javascript:void(0)">{{ item.group }}</a></li>
+                                    <li class="slide side-menu__label1"><a href="javascript:void(0)">{{ t(item.group) }}</a></li>
                                     <li v-for="c in item.children" :key="c.to" class="slide">
-                                        <router-link :to="c.to" class="side-menu__item" active-class="" exact-active-class="active">{{ c.label }}</router-link>
+                                        <router-link :to="c.to" class="side-menu__item" active-class="" exact-active-class="active">{{ t(c.label) }}</router-link>
                                     </li>
                                 </ul>
                             </li>
@@ -129,7 +145,7 @@
                             <li v-else class="slide">
                                 <router-link :to="item.to" class="side-menu__item" active-class="" exact-active-class="active">
                                     <i :class="['bi', item.icon, 'side-menu__icon']"></i>
-                                    <span class="side-menu__label">{{ item.label }}</span>
+                                    <span class="side-menu__label">{{ t(item.label) }}</span>
                                     <span v-if="item.badge && item.badge()" class="badge rounded-pill ms-auto" :class="item.badgeClass">{{ item.badge() }}</span>
                                 </router-link>
                             </li>
@@ -147,8 +163,8 @@
                     <nav>
                         <ol class="breadcrumb mb-0">
                             <li class="breadcrumb-item"><router-link to="/">{{ auth.settings.store_name || 'MediStore' }}</router-link></li>
-                            <li v-if="crumbGroup" class="breadcrumb-item">{{ crumbGroup }}</li>
-                            <li class="breadcrumb-item active" aria-current="page">{{ pageTitle }}</li>
+                            <li v-if="crumbGroup" class="breadcrumb-item">{{ t(crumbGroup) }}</li>
+                            <li class="breadcrumb-item active" aria-current="page">{{ t(pageTitle) }}</li>
                         </ol>
                     </nav>
                 </div>
@@ -159,6 +175,8 @@
 </template>
 
 <script setup>
+import api from '../api';
+import { t, lang, toggleLang, applyLang } from '../utils/i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../stores/auth';
@@ -171,6 +189,24 @@ const route = useRoute();
 const router = useRouter();
 
 const sideOpen = ref(false);
+
+/* ---------- global search (Ctrl+K) ---------- */
+const searchQ = ref(''), searchRes = ref([]), searchOpen = ref(false), searching = ref(false), searchIdx = ref(0);
+const searchEl = ref(null), searchWrap = ref(null);
+let searchTimer = null, searchSeq = 0;
+function runSearch() {
+    clearTimeout(searchTimer);
+    if (searchQ.value.trim().length < 2) { searchRes.value = []; return; }
+    searching.value = true;
+    searchTimer = setTimeout(async () => {
+        const seq = ++searchSeq;
+        try { const { data } = await api.get('/search', { params: { q: searchQ.value.trim() }, silent: true }); if (seq === searchSeq) { searchRes.value = data.data; searchIdx.value = 0; } }
+        catch (e) { if (seq === searchSeq) searchRes.value = []; } finally { if (seq === searchSeq) searching.value = false; }
+    }, 250);
+}
+function moveSearch(n) { if (searchRes.value.length) searchIdx.value = (searchIdx.value + n + searchRes.value.length) % searchRes.value.length; }
+function goSearch(r = searchRes.value[searchIdx.value]) { if (!r) return; searchOpen.value = false; searchQ.value = ''; searchRes.value = []; router.push(r.to); }
+
 const bellOpen = ref(false);
 const userOpen = ref(false);
 const bellEl = ref(null);
@@ -255,6 +291,8 @@ const menu = computed(() => {
             { to: '/quality-governance?tab=incidents', label: 'Medication Safety' },
             { to: '/quality-governance?tab=documents', label: 'Controlled Documents' },
             { to: '/quality-governance?tab=audits', label: 'Compliance Audits' },
+            ...(auth.perm('controlled.register') ? [{ to: '/controlled-register', label: 'Controlled Register' }] : []),
+            { to: '/interactions', label: 'Drug Interactions' },
             ...(am ? [{ to: '/stage5?tab=compliance', label: 'Recalls & Controlled Drugs' }] : []),
         ] },
         am && { group: 'Customer Engagement', icon: 'bi-megaphone', children: [
@@ -350,15 +388,18 @@ let timer;
 const onStock = () => setTimeout(alerts.load, 300);
 const onKey = (e) => {
     if (e.key === 'F1') { e.preventDefault(); router.push('/pos'); }
-    if (e.key === 'Escape') { bellOpen.value = false; userOpen.value = false; sideOpen.value = false; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchEl.value?.focus(); searchEl.value?.select(); searchOpen.value = true; }
+    if (e.key === 'Escape') { bellOpen.value = false; userOpen.value = false; sideOpen.value = false; searchOpen.value = false; }
 };
 const onClick = (e) => {
     if (bellEl.value && !bellEl.value.contains(e.target)) bellOpen.value = false;
     if (userEl.value && !userEl.value.contains(e.target)) userOpen.value = false;
+    if (searchWrap.value && !searchWrap.value.contains(e.target)) searchOpen.value = false;
 };
 const onVisible = () => { if (!document.hidden) alerts.load(); };
 
 onMounted(async () => {
+    applyLang();
     syncOpenGroup();
     applyMobileState();
     window.addEventListener('resize', onResize);

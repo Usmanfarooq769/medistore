@@ -10,6 +10,8 @@ export const useAuth = defineStore('auth', () => {
 
     const isAdmin = computed(() => user.value?.role === 'admin');
     const can = (key) => settings.value[key] === '1';
+    /** per-user permission (role default + overrides) – see config/permissions.php */
+    const perm = (key) => isAdmin.value || !!user.value?.permissions?.[key];
 
     function setSession(data) {
         if (data.token) {
@@ -50,5 +52,5 @@ export const useAuth = defineStore('auth', () => {
         clear();
     }
 
-    return { token, user, settings, isAdmin, can, login, fetchMe, logout, clear, updateSettings };
+    return { token, user, settings, isAdmin, can, perm, login, fetchMe, logout, clear, updateSettings };
 });

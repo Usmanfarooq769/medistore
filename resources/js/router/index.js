@@ -12,9 +12,11 @@ const routes = [
     { path: '/', component: Blank },
 
     { path: '/dashboard', component: () => import('../pages/Dashboard.vue'), meta: { ...admin, title: 'Dashboard' } },
-    { path: '/stage4', component: () => import('../pages/StageFour.vue'), meta: { title: 'Stage 4 Operations', stage4: true } },
-    { path: '/stage5', component: () => import('../pages/StageFive.vue'), meta: { title: 'Stage 5 Enterprise Operations', stage5: true } },
-    { path: '/stage6', component: () => import('../pages/StageSix.vue'), meta: { title: 'Stage 6 Operations', stage6: true } },
+    { path: '/stage4', component: () => import('../pages/StageFour.vue'), meta: { title: 'Pharmacy Operations', stage4: true } },
+    { path: '/stage5', component: () => import('../pages/StageFive.vue'), meta: { title: 'Enterprise Operations', stage5: true } },
+    { path: '/stage6', component: () => import('../pages/StageSix.vue'), meta: { title: 'Fulfilment Operations', stage6: true } },
+    { path: '/controlled-register', component: () => import('../pages/ControlledRegister.vue'), meta: { title: 'Controlled Register', quality: true } },
+    { path: '/interactions', component: () => import('../pages/DrugInteractions.vue'), meta: { title: 'Drug Interactions', quality: true } },
     { path: '/quality-governance', component: () => import('../pages/QualityManagement.vue'), meta: { title: 'Quality & Safety', quality: true } },
     { path: '/product-roadmap', component: () => import('../pages/ProductRoadmap.vue'), meta: { ...admin, title: 'Product Completion Roadmap' } },
     { path: '/enterprise-platform', component: () => import('../pages/EnterprisePlatform.vue'), meta: { ...admin, title: 'Enterprise Platform' } },
@@ -22,19 +24,7 @@ const routes = [
     { path: '/pos', component: () => import('../pages/Pos.vue'), meta: { title: 'POS – New Sale' } },
     { path: '/mobile', component: () => import('../pages/MobileHome.vue'), meta: { title: 'Mobile Dashboard' } },
     { path: '/barcode-labels', component: () => import('../pages/BarcodeLabels.vue'), meta: { ...admin, title: 'Barcode Labels' } },
-    { path: '/purchase-orders',
-        name: 'purchase-orders',
-        component: () => import('../pages/PurchaseOrders.vue'),
-         meta: { manager: true, title: 'Purchase Orders' } },
-    {
-    path: '/list-purchase-orders/create',
-    name: 'purchase-orders.create',
-    component: () => import('../pages/ListPurchaseOrderCreate.vue'),
-    meta: {
-        manager: true,
-        title: 'Purchase Orders Create'
-    }
-},
+    { path: '/purchase-orders', component: () => import('../pages/PurchaseOrders.vue'), meta: { manager: true, title: 'Purchase Orders' } },
     { path: '/prescriptions', component: () => import('../pages/Prescriptions.vue'), meta: { title: 'Prescriptions' } },
     { path: '/branches', component: () => import('../pages/Branches.vue'), meta: { ...admin, title: 'Branches & Transfers' } },
     { path: '/finance', component: () => import('../pages/Finance.vue'), meta: { ...admin, title: 'Finance & Accounting' } },

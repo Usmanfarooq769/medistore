@@ -24,6 +24,7 @@
     <link href="/rixzo/libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
     <link href="/rixzo/css/styles.min.css" rel="stylesheet">
     <link href="/rixzo/css/icons.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600&display=swap" rel="stylesheet">
 
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

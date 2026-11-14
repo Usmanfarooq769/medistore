@@ -2,7 +2,15 @@
     <div class="dt-wrap">
         <div v-if="loading" class="dt-progress" role="progressbar" aria-label="Loading"></div>
 
-        <div class="table-responsive">
+        <div v-if="exportable && rows.length && auth.perm('export.data')" class="dt-tools no-print">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Export">
+                <button type="button" class="btn btn-light" title="Download as Excel" :disabled="exporting" @click="doExport('xlsx')"><i class="bi bi-file-earmark-excel text-success"></i> Excel</button>
+                <button type="button" class="btn btn-light" title="Download as PDF" :disabled="exporting" @click="doExport('pdf')"><i class="bi bi-file-earmark-pdf text-danger"></i> PDF</button>
+                <button type="button" class="btn btn-light" title="Download as CSV" :disabled="exporting" @click="doExport('csv')"><i class="bi bi-filetype-csv"></i> CSV</button>
+            </div>
+        </div>
+
+        <div ref="wrapEl" class="table-responsive">
             <table class="table table-hover data-table mb-0" :class="tableClass">
                 <thead class="dt-head"><slot name="head" :sort="sort" :sortBy="sortBy" :icon="sortIcon" /></thead>
                 <tbody :class="{ 'is-reloading': loading && rows.length }">
@@ -57,6 +65,8 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import api, { isCancel } from '../api';
 import Pagination from './Pagination.vue';
+import { useAuth } from '../stores/auth';
+import { exportCsv, exportPdf, exportXlsx, tableToMatrix } from '../utils/exporter';
 
 /**
  * Server-side paginated AJAX table.
@@ -72,7 +82,19 @@ const props = defineProps({
     tableClass: { type: String, default: '' },
     showPager: { type: Boolean, default: true },
     defaultSort: { type: String, default: null },
+    exportable: { type: Boolean, default: true },
 });
+const auth = useAuth();
+const wrapEl = ref(null);
+const exporting = ref(false);
+async function doExport(kind) {
+    const m = tableToMatrix(wrapEl.value || document);
+    if (m.length < 2) return;
+    exporting.value = true;
+    const title = (document.title || 'Export').split(' | ')[0];
+    try { if (kind === 'xlsx') await exportXlsx(m, title); else if (kind === 'pdf') await exportPdf(m, title, auth.settings.store_name); else exportCsv(m, title); }
+    finally { exporting.value = false; }
+}
 const emit = defineEmits(['loaded']);
 
 const rows = ref([]);

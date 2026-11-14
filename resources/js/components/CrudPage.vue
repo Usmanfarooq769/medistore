@@ -49,8 +49,12 @@
 
         <Modal :show="show" :title="(editing ? 'Edit ' : 'Add ') + singular" :size="modalSize" @close="show = false">
             <form :id="formId" class="row g-3" autocomplete="off" @submit.prevent="save">
-                <div v-for="f in fields" :key="f.key" :class="f.col || 'col-12'">
-                    <template v-if="f.type === 'switch'">
+                <div v-for="f in fields.filter(x => !x.showIf || x.showIf(form))" :key="f.key" :class="f.type === 'section' ? 'col-12' : (f.col || 'col-12')">
+                    <template v-if="f.type === 'section'">
+                        <div class="fw-semibold text-primary border-bottom pb-1 mt-2"><i v-if="f.icon" :class="['bi', f.icon, 'me-1']"></i>{{ f.label }}</div>
+                        <div v-if="f.hint" class="form-text">{{ f.hint }}</div>
+                    </template>
+                    <template v-else-if="f.type === 'switch'">
                         <div class="form-check form-switch mt-2">
                             <input :id="'f_' + f.key" v-model="form[f.key]" class="form-check-input" type="checkbox" role="switch">
                             <label class="form-check-label" :for="'f_' + f.key">{{ f.label }}</label>
@@ -74,6 +78,7 @@
                         <div v-if="f.hint" class="form-text">{{ f.hint }}</div>
                     </template>
                 </div>
+                <slot name="form-extra" :form="form" :editing="editing" />
             </form>
 
             <template #footer>
@@ -124,7 +129,7 @@ const onLoaded = (d) => { total.value = d.meta?.total ?? d.total ?? null; };
 function openForm(item = null) {
     editing.value = item;
     Object.keys(form).forEach((k) => delete form[k]);
-    props.fields.forEach((f) => { form[f.key] = item ? (f.type === 'password' ? '' : item[f.key] ?? '') : (props.defaults[f.key] ?? (f.type === 'switch' ? true : '')); });
+    props.fields.filter((f) => f.type !== 'section').forEach((f) => { form[f.key] = item ? (f.type === 'password' ? '' : item[f.key] ?? '') : (props.defaults[f.key] ?? (f.type === 'switch' ? true : '')); });
     show.value = true;
 }
 

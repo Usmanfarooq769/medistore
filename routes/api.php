@@ -32,6 +32,9 @@ use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\NotificationCenterController;
 use App\Http\Controllers\Api\SubscriptionManagementController;
 use App\Http\Controllers\Api\SystemHealthController;
+use App\Http\Controllers\Api\SafetyController;
+use App\Http\Controllers\Api\SearchController;
+use App\Http\Controllers\Api\ControlledRegisterController;
 use Illuminate\Support\Facades\Route;
 
 /* All routes are prefixed with /api (bootstrap/app.php) */
@@ -44,6 +47,25 @@ Route::middleware(['auth:sanctum', 'role:admin,branch_manager,pharmacist,cashier
     Route::post('logout', [AuthController::class, 'logout']);
 
     Route::get('lookups', LookupController::class);
+    Route::get('search', SearchController::class)->middleware('throttle:60,1');
+
+    // Drug safety, substitutes, interaction reference, FBR retry, controlled register
+    Route::post('pos/safety-check', [SafetyController::class, 'check']);
+    Route::get('medicines/{medicine}/substitutes', [SafetyController::class, 'substitutes']);
+    Route::get('interactions', [SafetyController::class, 'interactions']);
+    Route::middleware('role:admin,branch_manager,pharmacist')->group(function () {
+        Route::post('interactions', [SafetyController::class, 'storeInteraction']);
+        Route::put('interactions/{interaction}', [SafetyController::class, 'updateInteraction']);
+        Route::delete('interactions/{interaction}', [SafetyController::class, 'destroyInteraction']);
+    });
+    Route::get('reports/controlled-register', ControlledRegisterController::class);
+    Route::delete('sales/{sale}', [SaleController::class, 'destroy']);     // admin / users with sales.void / manager PIN
+    Route::post('sales/{sale}/fbr-sync', function (\Illuminate\Http\Request $request, \App\Models\Sale $sale) {
+        abort_unless(in_array($request->user()->role, ['admin', 'branch_manager'], true), 403);
+        abort_unless((int) $sale->branch_id === \App\Services\BranchContext::id(), 404);
+        $sale = app(\App\Services\FbrService::class)->issue($sale);
+        return response()->json(['message' => 'FBR status: ' . $sale->fbr_status, 'data' => ['fbr_status' => $sale->fbr_status, 'fbr_invoice_no' => $sale->fbr_invoice_no, 'fbr_error' => $sale->fbr_error]]);
+    });
 
     // POS
     Route::get('pos/products', [PosController::class, 'products']);
@@ -143,8 +165,6 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::apiResource('medicines', MedicineController::class);
 
 
-    Route::delete('sales/{sale}', [SaleController::class, 'destroy']);
-
     // RETURN TO SUPPLIER (stock out)
     Route::get('purchase-returns', [PurchaseReturnController::class, 'index']);
     Route::post('purchase-returns', [PurchaseReturnController::class, 'store']);
@@ -156,6 +176,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('settings', [SettingController::class, 'index']);
     Route::put('settings', [SettingController::class, 'update']);
 
+    Route::get('permission-catalog', [UserController::class, 'permissionCatalog']);
     Route::apiResource('users', UserController::class)->except('show');
 });
 

@@ -34,6 +34,11 @@ class SaleResource extends JsonResource
             'returns'         => $this->whenLoaded('returns', fn () => $this->returns->map(fn ($r) => [
                 'id' => $r->id, 'return_no' => $r->return_no, 'total' => (float) $r->total, 'return_date' => $r->return_date?->toDateString(),
             ])),
+            'fbr_invoice_no'  => $this->fbr_invoice_no,
+            'fbr_status'      => $this->fbr_status,
+            'fbr_error'       => $this->fbr_error,
+            'loyalty_points_earned' => (int) $this->loyalty_points_earned,
+            'loyalty_points_redeemed' => (int) $this->loyalty_points_redeemed,
             'created_at'      => $this->created_at?->toDateTimeString(),
         ];
     }

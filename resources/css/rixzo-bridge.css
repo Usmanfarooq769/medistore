@@ -27,3 +27,30 @@
 /* long sidebar labels never collide with the arrow */
 .app-sidebar .side-menu__item .side-menu__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-sidebar .side-menu__item .side-menu__angle { margin-inline-start: .35rem; flex-shrink: 0; }
+
+/* POS substitutes button */
+.pos-card { position: relative; }
+.subs-btn { position: absolute; top: 6px; right: 6px; border: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(var(--primary-rgb), .12); color: rgb(var(--primary-rgb)); font-size: .8rem; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .15s; }
+.pos-card:hover .subs-btn, .subs-btn:focus { opacity: 1; }
+.pos-card .in-cart { right: 38px !important; }
+@media (hover: none) { .subs-btn { opacity: 1; } }
+
+/* receipt widths: 58 mm / 80 mm thermal or A4 */
+.receipt.receipt-58 { width: 58mm; font-size: 10px; padding: 2mm; }
+.receipt.receipt-80 { width: 80mm; font-size: 11px; padding: 3mm; }
+.receipt.receipt-a4 { width: 190mm; font-size: 13px; padding: 10mm; }
+.receipt .qr { width: 26mm; height: 26mm; image-rendering: pixelated; }
+.receipt-58 .qr { width: 24mm; height: 24mm; }
+@media print { .receipt.receipt-58, .receipt.receipt-80 { margin: 0; } }
+
+/* Urdu (RTL) */
+html.lang-ur body, html.lang-ur .app-sidebar, html.lang-ur .app-header { font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Poppins', system-ui, sans-serif; line-height: 1.9; }
+html[dir="rtl"] .receipt { direction: ltr; }
+html[dir="rtl"] .pos-wrap, html[dir="rtl"] .dt-wrap table { direction: rtl; }
+
+.legend-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: .5rem; }
+.ms-spin { display: inline-block; animation: ms-rot 1s linear infinite; }
+@keyframes ms-rot { to { transform: rotate(360deg); } }
+
+.dt-tools { display: flex; justify-content: flex-end; padding: .5rem .75rem; border-bottom: 1px solid var(--default-border); }
+@media print { .dt-tools { display: none !important; } }

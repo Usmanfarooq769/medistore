@@ -127,7 +127,13 @@ class CustomerController extends Controller
             'insurance_provider_id' => 'nullable|exists:insurance_providers,id',
             'insurance_plan_id' => 'nullable|exists:insurance_plans,id',
             'insurance_member_no' => 'nullable|string|max:100',
-        ]);
+            'allergies' => 'nullable|string|max:1000',
+            'chronic_conditions' => 'nullable|string|max:1000',
+            'date_of_birth' => 'nullable|date|before_or_equal:today',
+            'gender' => 'nullable|in:male,female,other',
+            'cnic' => ['nullable', 'regex:/^\d{5}-?\d{7}-?\d$/'],
+            'email' => 'nullable|email|max:150',
+        ], ['cnic.regex' => 'CNIC must look like 12345-1234567-1.']);
         if (! auth()->user()?->isAdmin()) unset($validated['credit_limit']);
         if (! in_array(auth()->user()?->role, ['admin','branch_manager'], true)) unset($validated['insurance_provider_id'], $validated['insurance_plan_id'], $validated['insurance_member_no']);
         if (!empty($validated['insurance_plan_id']) && empty($validated['insurance_provider_id'])) {

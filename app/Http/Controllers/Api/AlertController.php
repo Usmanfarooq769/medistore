@@ -43,9 +43,10 @@ class AlertController extends Controller
         return BatchResource::collection(
             MedicineBatch::with(['medicine:id,name,strength,unit', 'supplier:id,name'])
                 ->where('branch_id', BranchContext::id())->where('quantity', '>', 0)
-                ->when($request->type === 'expired',
+                ->when($request->search, fn ($q, $s) => $q->where(fn ($w) => $w->where('batch_no', 'like', "%{$s}%")->orWhereHas('medicine', fn ($m) => $m->where('name', 'like', "%{$s}%")->orWhere('generic_name', 'like', "%{$s}%"))))
+                ->when($request->type === 'any', fn ($q) => $q, fn ($q) => $q->when($request->type === 'expired',
                     fn ($q) => $q->where('expiry_date', '<', today()),
-                    fn ($q) => $q->whereBetween('expiry_date', [today(), today()->addDays($days)]))
+                    fn ($q) => $q->whereBetween('expiry_date', [today(), today()->addDays($days)])))
                 ->orderBy('expiry_date')
                 ->paginate(25)
         );

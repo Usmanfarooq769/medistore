@@ -16,7 +16,11 @@ use App\Models\PromotionRedemption;
 use App\Models\LoyaltyTransaction;
 use App\Services\BranchContext;
 use App\Services\JournalPostingService;
+use App\Services\FbrService;
+use App\Services\ManagerPinService;
+use App\Services\SafetyCheckService;
 use App\Services\StockService;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -57,7 +61,9 @@ class PosController extends Controller
     {
         $data = $request->validated();
         $user = $request->user();
-        $allowPriceEdit = $user->isAdmin() || setting('cashier_price_edit', '0') === '1';
+        $allowPriceEdit = $user->isAdmin() || $user->hasPermission('sales.price_edit') || setting('cashier_price_edit', '0') === '1';
+        $pins = app(ManagerPinService::class);
+        $approval = ['by' => null, 'note' => null];
         $medicineIds = collect($data['items'])->pluck('id')->unique();
         $restrictedIds = Medicine::whereIn('id', $medicineIds)->where('requires_prescription', true)->pluck('id');
         $prescription = null;
@@ -83,7 +89,26 @@ class PosController extends Controller
             'price' => $g->first()['price'] ?? null,
         ]);
 
-        $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user, $prescription, $taxProfile) {
+        // ---- drug-safety check (allergy / interaction / duplicate) – only "danger" level blocks ----
+        if (setting('safety_check_enabled', '1') === '1') {
+            $safety = app(SafetyCheckService::class)->check($lines->pluck('id')->unique()->all(), ! empty($data['customer_id']) ? Customer::find($data['customer_id']) : null);
+            if ($safety['level'] === 'danger') {
+                $respond = fn (string $msg, bool $needsPin) => new HttpResponseException(response()->json([
+                    'message' => $msg, 'safety_warning' => true, 'requires_manager_pin' => $needsPin, 'safety' => $safety,
+                ], 422));
+                if (empty($data['safety_override'])) throw $respond('Drug-safety warning: review the alerts and confirm to continue.', ! $user->hasPermission('safety.override'));
+                if (! $user->hasPermission('safety.override')) {
+                    $approver = $pins->approver($data['manager_pin'] ?? null, 'safety.override', $user);
+                    if (! $approver) throw $respond('A pharmacist / manager PIN is required to override a drug-safety warning.', true);
+                    $approval['by'] = $approver->id;
+                } else {
+                    $approval['by'] = $user->id;
+                }
+                $approval['note'] = mb_substr(trim((string) ($data['safety_override_note'] ?? 'Overridden after review')), 0, 250);
+            }
+        }
+
+        $sale = DB::transaction(function () use ($data, $lines, $allowPriceEdit, $user, $prescription, $taxProfile, $pins, &$approval) {
             $onlineOrder = null;
             $onlineOrderItems = collect();
             if (! empty($data['online_order_id'])) {
@@ -152,8 +177,16 @@ class PosController extends Controller
 
             $manualDiscount = min((float) ($data['discount'] ?? 0), $subtotal);
             $maxDisc = (float) setting('max_discount_percent', 100);
-            if (! $user->isAdmin() && $subtotal > 0 && ($manualDiscount / $subtotal * 100) > $maxDisc + 0.001) {
-                throw ValidationException::withMessages(['discount' => "Maximum allowed manual discount is {$maxDisc}%."]);
+            if ($subtotal > 0 && ($manualDiscount / $subtotal * 100) > $maxDisc + 0.001 && ! $user->hasPermission('sales.override_discount')) {
+                $approver = $pins->approver($data['manager_pin'] ?? null, 'sales.override_discount', $user);
+                if (! $approver) {
+                    throw new HttpResponseException(response()->json([
+                        'message' => "Discount is above the allowed {$maxDisc}%. A manager PIN is required.",
+                        'errors' => ['discount' => ["Maximum allowed manual discount is {$maxDisc}%. Ask a manager to enter their PIN."]],
+                        'requires_manager_pin' => true,
+                    ], 422));
+                }
+                $approval['by'] = $approver->id;
             }
 
             $promotion = null;
@@ -198,6 +231,7 @@ class PosController extends Controller
             $paid  = (float) $data['paid'];
             $due   = max($total - $paid, 0);
 
+            if ($due > 0 && ! $user->hasPermission('sales.credit')) throw ValidationException::withMessages(['paid' => 'You are not allowed to sell on credit.']);
             if ($due > 0 && ! $customer) throw ValidationException::withMessages(['customer_id' => 'Select or add a customer to sell on credit (due).']);
             if ($due > 0 && $customer && $customer->credit_limit !== null && ((float) $customer->balance + $due) > (float) $customer->credit_limit + 0.001) {
                 throw ValidationException::withMessages(['customer_id' => 'Credit limit exceeded. Available credit: ' . money(max(0, (float) $customer->credit_limit - (float) $customer->balance)) . '.']);
@@ -223,6 +257,8 @@ class PosController extends Controller
                 'tax_profile_id' => $taxProfile?->id,
                 'promotion_id' => $promotion?->id,
                 'loyalty_points_redeemed' => $redeemPoints,
+                'approved_by' => $approval['by'],
+                'safety_override_note' => $approval['note'],
             ]);
 
             if (\Illuminate\Support\Facades\Schema::hasTable('controlled_medicine_register')) {
@@ -275,6 +311,9 @@ class PosController extends Controller
 
             return $sale;
         });
+
+        // FBR invoice (never blocks the sale – failures stay "pending" and are retried)
+        try { app(FbrService::class)->issue($sale); } catch (\Throwable $e) { report($e); }
 
         StockService::flushCache();
 

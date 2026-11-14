@@ -26,6 +26,29 @@
                 </div></div>
             </div>
         </div></div>
+        <div class="col-lg-6"><div class="card h-100">
+            <div class="card-header fw-semibold"><i class="bi bi-printer me-1"></i>Receipt &amp; tax identity</div>
+            <div class="card-body row g-3">
+                <div class="col-md-6"><label class="form-label">Receipt paper</label>
+                    <select v-model="s.receipt_width" class="form-select"><option value="80">Thermal 80 mm</option><option value="58">Thermal 58 mm</option><option value="a4">A4 page</option></select>
+                    <div class="form-text">Print dialog is sized automatically.</div></div>
+                <div class="col-md-6"><label class="form-label">Store NTN</label><input v-model="s.store_ntn" class="form-control" maxlength="30" placeholder="1234567-8"></div>
+                <div class="col-md-6"><label class="form-label">STRN (sales-tax reg. no.)</label><input v-model="s.store_strn" class="form-control" maxlength="30"></div>
+                <div class="col-12"><div class="form-check form-switch">
+                    <input id="safe" v-model="safetyOn" class="form-check-input" type="checkbox"><label for="safe" class="form-check-label">Drug-safety check at POS (allergies, interactions, duplicate ingredients)</label>
+                </div></div>
+            </div>
+        </div></div>
+        <div class="col-lg-6"><div class="card h-100">
+            <div class="card-header fw-semibold d-flex justify-content-between"><span><i class="bi bi-qr-code me-1"></i>FBR POS invoicing</span>
+                <div class="form-check form-switch mb-0"><input id="fbr" v-model="fbrOn" class="form-check-input" type="checkbox"><label for="fbr" class="form-check-label">Enabled</label></div></div>
+            <div class="card-body row g-3" :class="{ 'opacity-50': !fbrOn }">
+                <div class="col-md-6"><label class="form-label">POS ID</label><input v-model="s.fbr_pos_id" class="form-control" :disabled="!fbrOn" maxlength="30"></div>
+                <div class="col-md-6"><label class="form-label">API token</label><input v-model="s.fbr_api_token" type="password" class="form-control" :disabled="!fbrOn" autocomplete="new-password" :placeholder="s.fbr_api_token_set === '1' ? 'Saved – type to replace' : 'Paste token'"></div>
+                <div class="col-12"><label class="form-label">FBR API URL</label><input v-model="s.fbr_api_url" type="url" class="form-control" :disabled="!fbrOn" placeholder="https://… (leave blank to only number invoices locally)"></div>
+                <div class="col-12 small text-muted">Every sale gets an FBR invoice number and a QR on the receipt. If FBR is unreachable the sale is never blocked – it is marked <b>pending</b> and re-sent automatically every 5 minutes. Use the POS ID, token and URL issued to your business and test in FBR's sandbox first.</div>
+            </div>
+        </div></div>
         <div class="col-12 text-end"><button class="btn btn-primary btn-lg" :disabled="saving"><i class="bi bi-save"></i> Save settings</button></div>
     </form>
 </template>
@@ -39,11 +62,14 @@ import { notify } from '../utils/swal';
 const auth = useAuth();
 const s = reactive({});
 const saving = ref(false);
+const safetyOn = computed({ get: () => s.safety_check_enabled !== '0', set: (v) => { s.safety_check_enabled = v ? '1' : '0'; } });
+const fbrOn = computed({ get: () => s.fbr_enabled === '1', set: (v) => { s.fbr_enabled = v ? '1' : '0'; } });
 const priceEdit = computed({ get: () => s.cashier_price_edit === '1', set: (v) => { s.cashier_price_edit = v ? '1' : '0'; } });
 
 onMounted(async () => {
     const { data } = await api.get('/settings');
-    Object.assign(s, { default_tax: 0, max_discount_percent: 10, expiry_alert_days: 60, return_days: 7, cashier_price_edit: '0', loyalty_earn_per_100: 1, loyalty_point_value: 1, ...data });
+    Object.assign(s, { default_tax: 0, max_discount_percent: 10, expiry_alert_days: 60, return_days: 7, cashier_price_edit: '0', loyalty_earn_per_100: 1, loyalty_point_value: 1, receipt_width: '80', safety_check_enabled: '1', fbr_enabled: '0', fbr_api_token: '', ...data });
+    s.fbr_api_token = '';
 });
 
 async function save() {
@@ -51,6 +77,7 @@ async function save() {
     try {
         const { data } = await api.put('/settings', { ...s });
         auth.updateSettings(data.data);
+        s.fbr_api_token = ''; Object.assign(s, data.data);
         notify(data.message);
     } catch (e) { /* shown */ } finally { saving.value = false; }
 }

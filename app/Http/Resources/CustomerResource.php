@@ -18,6 +18,14 @@ class CustomerResource extends JsonResource
             'insurance_plan_id' => $this->insurance_plan_id,
             'insurance_member_no' => $this->insurance_member_no,
             'balance'     => (float) $this->balance,
+            'credit_limit' => $this->credit_limit !== null ? (float) $this->credit_limit : null,
+            'loyalty_points' => (int) $this->loyalty_points,
+            'allergies'   => $this->allergies,
+            'chronic_conditions' => $this->chronic_conditions,
+            'date_of_birth' => optional($this->date_of_birth)->toDateString(),
+            'gender'      => $this->gender,
+            'cnic'        => $this->cnic,
+            'email'       => $this->email,
             'sales_count' => $this->whenCounted('sales'),
         ];
     }
